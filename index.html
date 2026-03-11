@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>4D Digital Pottery — Sculpt with Your Hands</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,600;1,400&family=JetBrains+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/src/styles.css" />
+    <!-- LeapJS pre-built browser bundle (avoids Vite/Node module issues) -->
+    <script src="/leap.min.js"></script>
+  </head>
+  <body>
+    <div id="app">
+      <canvas id="canvas-3d"></canvas>
+
+      <!-- HUD: Instructions & Status -->
+      <div id="hud">
+        <p id="leap-status">Connecting to Leap Motion…</p>
+        <p id="instructions">
+          Move your hands over the clay to sculpt. Pinch with both hands or press
+          <kbd>F</kbd> to finish your masterpiece.
+        </p>
+      </div>
+
+      <!-- Gesture Guide -->
+      <div id="gesture-guide">
+        <h3>MASTER POTTER GESTURES</h3>
+        <ul>
+          <li id="g-pinch"><span class="gkey">[Pinch]</span> Pull &amp; Shape Walls</li>
+          <li id="g-width"><span class="gkey">[Two Hands]</span> Control Width</li>
+          <li id="g-smooth"><span class="gkey">[Flat Palm]</span> Smooth Surface</li>
+          <li id="g-reset"><span class="gkey">[Fist]</span> Reset Clay</li>
+        </ul>
+      </div>
+
+      <!-- Postcard Overlay (hidden until "Finish Masterpiece") -->
+      <div id="postcard-overlay" class="hidden">
+        <div id="postcard">
+          <h1>Your Digital Masterpiece</h1>
+          <div id="postcard-content">
+            <div id="postcard-images">
+              <div id="webcam-snapshot-container">
+                <img id="webcam-snapshot" alt="You" />
+                <span>You</span>
+              </div>
+              <div id="clay-snapshot-container">
+                <img id="clay-snapshot" alt="Your Clay" />
+                <span>Your Creation</span>
+              </div>
+            </div>
+            <form id="postcard-form">
+              <div class="form-group">
+                <label for="email-to">To (Email)</label>
+                <input
+                  type="email"
+                  id="email-to"
+                  name="to_email"
+                  placeholder="friend@example.com"
+                  required
+                />
+              </div>
+              <div class="form-group">
+                <label for="from-name">From (Name)</label>
+                <input
+                  type="text"
+                  id="from-name"
+                  name="from_name"
+                  placeholder="Your name"
+                  required
+                />
+              </div>
+              <div class="form-group">
+                <label for="message">A short message</label>
+                <textarea
+                  id="message"
+                  name="message"
+                  rows="4"
+                  placeholder="Write something special…"
+                ></textarea>
+              </div>
+              <button type="submit" id="send-postcard">Send Postcard</button>
+              <p id="send-status"></p>
+            </form>
+          </div>
+          <button id="close-postcard" aria-label="Close postcard">×</button>
+        </div>
+      </div>
+    </div>
+
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>

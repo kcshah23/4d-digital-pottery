@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "leap-motion": {
+      "command": "node",
+      "args": ["mcp-leap/index.js"],
+      "cwd": "${workspaceFolder}"
+    }
+  }
+}

@@ -1,0 +1,25 @@
+{
+  "name": "4d-digital-pottery",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "concurrently -n leap,vite -c blue,green \"npm run leap-bridge\" \"vite\"",
+    "dev:vite": "vite",
+    "setup-leap-bridge": "node scripts/setup-leap-bridge.js",
+    "leap-bridge": "node scripts/run-leap-bridge.js",
+    "dev:full": "concurrently -n L,V -c blue,green \"npm run leap-bridge\" \"vite\"",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "three": "^0.168.0",
+    "leapjs": "^0.6.4",
+    "@emailjs/browser": "^4.4.1",
+    "html2canvas": "^1.4.1"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.0",
+    "vite": "^5.4.0"
+  }
+}

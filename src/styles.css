@@ -1,0 +1,308 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html,
+body {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: #000;
+  font-family: 'Cormorant Garamond', Georgia, serif;
+  color: #e8e4df;
+}
+
+#app {
+  width: 100%;
+  height: 100%;
+  position: relative;
+}
+
+#canvas-3d {
+  display: block;
+  width: 100%;
+  height: 100%;
+  background: #000;
+}
+
+/* ── HUD ── */
+#hud {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  padding: 1rem 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  pointer-events: none;
+  z-index: 10;
+}
+
+#leap-status {
+  font-size: 0.75rem;
+  font-family: 'JetBrains Mono', monospace;
+  pointer-events: auto;
+  padding: 0.25rem 0.55rem;
+  border-radius: 3px;
+  display: inline-block;
+  width: fit-content;
+  transition: background 0.3s, color 0.3s;
+  letter-spacing: 0.02em;
+}
+
+#leap-status a {
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.status-connecting {
+  background: rgba(255, 200, 50, 0.1);
+  color: #c9a83a;
+}
+.status-waiting {
+  background: rgba(100, 180, 255, 0.1);
+  color: #6aacf0;
+}
+.status-connected {
+  background: rgba(80, 220, 120, 0.12);
+  color: #50dc78;
+}
+.status-error {
+  background: rgba(255, 80, 80, 0.1);
+  color: #e85555;
+}
+
+#instructions {
+  font-size: 0.9rem;
+  opacity: 0.55;
+  max-width: 480px;
+  line-height: 1.35;
+}
+
+#instructions kbd {
+  display: inline-block;
+  padding: 0.08em 0.3em;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 3px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.85em;
+}
+
+.hidden {
+  display: none !important;
+}
+
+/* ── Postcard Overlay ── */
+#postcard-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.95);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+  padding: 2rem;
+  backdrop-filter: blur(10px);
+}
+
+#postcard {
+  position: relative;
+  max-width: 680px;
+  width: 100%;
+  background: linear-gradient(150deg, #111 0%, #080808 100%);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  padding: 2.5rem;
+  box-shadow: 0 30px 100px rgba(0, 0, 0, 0.8);
+}
+
+#postcard h1 {
+  font-size: 1.5rem;
+  font-weight: 600;
+  margin-bottom: 1.4rem;
+  letter-spacing: 0.03em;
+}
+
+#postcard-content {
+  display: flex;
+  flex-direction: column;
+  gap: 1.4rem;
+}
+
+#postcard-images {
+  display: flex;
+  gap: 1.5rem;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+#webcam-snapshot-container,
+#clay-snapshot-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+#webcam-snapshot-container img,
+#clay-snapshot-container img {
+  width: 200px;
+  height: 200px;
+  object-fit: cover;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+#webcam-snapshot-container span,
+#clay-snapshot-container span {
+  font-size: 0.8rem;
+  opacity: 0.5;
+}
+
+#postcard-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+.form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.form-group label {
+  font-size: 0.8rem;
+  opacity: 0.7;
+}
+
+.form-group input,
+.form-group textarea {
+  padding: 0.55rem 0.8rem;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 5px;
+  color: #e8e4df;
+  font-family: inherit;
+  font-size: 0.9rem;
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+.form-group input:focus,
+.form-group textarea:focus {
+  border-color: rgba(255, 255, 255, 0.25);
+}
+
+.form-group input::placeholder,
+.form-group textarea::placeholder {
+  color: rgba(255, 255, 255, 0.2);
+}
+
+.form-group textarea {
+  resize: vertical;
+  min-height: 65px;
+}
+
+#send-postcard {
+  padding: 0.75rem 1.2rem;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 5px;
+  color: #e8e4df;
+  font-family: inherit;
+  font-size: 0.95rem;
+  cursor: pointer;
+  transition: background 0.2s, border-color 0.2s;
+}
+
+#send-postcard:hover {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.25);
+}
+
+#send-status {
+  font-size: 0.8rem;
+  opacity: 0.75;
+  min-height: 1.2em;
+}
+
+#close-postcard {
+  position: absolute;
+  top: 0.75rem;
+  right: 0.75rem;
+  width: 32px;
+  height: 32px;
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 50%;
+  color: #e8e4df;
+  font-size: 1.3rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+  transition: background 0.2s;
+}
+
+#close-postcard:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+/* ── Gesture Guide ── */
+#gesture-guide {
+  position: absolute;
+  bottom: 1.4rem;
+  left: 1.5rem;
+  z-index: 10;
+  pointer-events: none;
+  animation: guide-pulse 3.5s ease-in-out infinite;
+}
+
+@keyframes guide-pulse {
+  0%, 100% { opacity: 0.3; }
+  50%      { opacity: 0.5; }
+}
+
+#gesture-guide h3 {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.6rem;
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  color: rgba(255, 255, 255, 0.55);
+  margin-bottom: 0.5rem;
+  text-transform: uppercase;
+}
+
+#gesture-guide ul {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+#gesture-guide li {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.65rem;
+  color: rgba(255, 255, 255, 0.4);
+  transition: color 0.2s, opacity 0.2s;
+}
+
+#gesture-guide .gkey {
+  color: rgba(255, 255, 255, 0.55);
+  margin-right: 0.3em;
+}
+
+#gesture-guide li.gesture-active {
+  color: rgba(130, 255, 170, 0.95);
+  opacity: 1;
+}
+
+#gesture-guide li.gesture-active .gkey {
+  color: rgba(130, 255, 170, 1);
+}
