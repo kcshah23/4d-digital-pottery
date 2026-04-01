@@ -18,7 +18,7 @@ import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 
 import { getHandData, getHandPositions } from './utils/leapCoordinates.js';
 import { createParticleSystem } from './particles/particleSystem.js';
-import { initTrackingView, updateTrackingView } from './tracking/handVisualizer.js';
+import { initTrackingView, updateTrackingView, setTrackingColor } from './tracking/handVisualizer.js';
 import {
   initAudio, resumeAudio, updateSwoosh, loadSquishSound, playSquish,
   updateContactBuzz, playWaterSquish, updateRotationHum,
@@ -31,6 +31,43 @@ import { uploadPostcardImage, saveToGallery } from './supabase/galleryService.js
 const LEAP_CONFIG = { scale: 0.002, offsetY: -0.15, offsetZ: 0 };
 
 const BASELINE_PALM_DIST = 0.28;
+
+// 25 bright neon hues — glow-in-the-dark with bloom
+const GLOW_PALETTE = [
+  0xff00ff, // hot pink
+  0x00ffff, // electric cyan
+  0x39ff14, // neon green
+  0xbf00ff, // vivid violet
+  0xff6600, // electric orange
+  0xff0066, // hot magenta
+  0x00aaff, // laser blue
+  0xccff00, // acid yellow
+  0xff3366, // neon coral
+  0x00ff88, // mint neon
+  0xff4400, // blaze orange
+  0x00ffcc, // turquoise
+  0xff0099, // fuchsia
+  0x7700ff, // deep purple
+  0xffff00, // pure yellow
+  0x00ff44, // emerald
+  0xff2200, // neon red
+  0x44bbff, // sky blue
+  0xff88ff, // pastel pink
+  0x00ffaa, // seafoam
+  0xdd00ff, // electric purple
+  0xaaff00, // chartreuse
+  0xff5599, // rose
+  0x00ddff, // ice blue
+  0xffaa00, // amber
+];
+let colorIndex = Math.floor(Math.random() * GLOW_PALETTE.length);
+
+function applyNextColor() {
+  const hex = GLOW_PALETTE[colorIndex];
+  particleSys.setColor(hex);
+  setTrackingColor(hex);
+  colorIndex = (colorIndex + 1) % GLOW_PALETTE.length;
+}
 
 // ── DOM ─────────────────────────────────────────────────────────
 
@@ -387,9 +424,9 @@ async function handleSave(e) {
       clay_model_data: { positions },
     });
 
-    saveStatus.textContent = 'Saved!';
-    saveForm.classList.add('hidden');
-    saveActions.classList.remove('hidden');
+    saveStatus.textContent = 'Saved! Opening gallery…';
+    await wait(800);
+    window.location.href = '/gallery.html';
   } catch (err) {
     const msg = err instanceof Error ? err.message : (err?.text || JSON.stringify(err));
     saveStatus.textContent = 'Failed: ' + msg;
@@ -404,6 +441,7 @@ function resetForNewPot() {
   capturedClayDataUrl = null;
   document.getElementById('potter-name').value = '';
   document.getElementById('save-btn').disabled = false;
+  applyNextColor();
 }
 
 // ── Animation Loop ──────────────────────────────────────────────
@@ -474,7 +512,8 @@ function boot() {
   btnNewPot?.addEventListener('click', resetForNewPot);
   btnViewGallery?.addEventListener('click', () => { window.location.href = '/gallery.html'; });
 
-  initTrackingView();
+  initTrackingView(camera);
+  applyNextColor();
   animate();
   initLeap();
 }

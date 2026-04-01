@@ -1,24 +1,34 @@
 /**
- * Live hand skeleton / IR visualizer drawn on a 2D canvas.
- * Receives raw LeapJS hand objects each frame.
+ * Full-screen hand skeleton overlay.
+ * Projects raw Leap hand positions through the Three.js camera
+ * so the skeleton aligns with the particle cloud.
  */
 
-const W = 280;
-const H = 200;
+import * as THREE from 'three';
+
+const LEAP_SCALE = 0.002;
+const LEAP_OFFSET_Y = -0.15;
 
 let ctx = null;
-let mode = 'skeleton';
+let canvasEl = null;
+let cam = null;
+let accentColor = 'rgba(255,255,255,0.6)';
+let accentGlow  = 'rgba(255,255,255,0.15)';
 
-// Leap mm → canvas pixels (front-facing X-Y projection)
-function toCanvas(pos) {
-  const x = (pos[0] / 350 + 0.5) * W;
-  const y = (1 - (pos[1] - 30) / 350) * H;
-  return [x, y];
+const _v = new THREE.Vector3();
+
+function leapToScreen(pos) {
+  _v.set(pos[0] * LEAP_SCALE, pos[1] * LEAP_SCALE + LEAP_OFFSET_Y, -pos[2] * LEAP_SCALE);
+  _v.project(cam);
+  return [
+    (_v.x *  0.5 + 0.5) * canvasEl.width,
+    (_v.y * -0.5 + 0.5) * canvasEl.height,
+  ];
 }
 
 function line(a, b, color, width) {
-  const [ax, ay] = toCanvas(a);
-  const [bx, by] = toCanvas(b);
+  const [ax, ay] = leapToScreen(a);
+  const [bx, by] = leapToScreen(b);
   ctx.beginPath();
   ctx.moveTo(ax, ay);
   ctx.lineTo(bx, by);
@@ -28,7 +38,7 @@ function line(a, b, color, width) {
 }
 
 function dot(pos, r, color) {
-  const [x, y] = toCanvas(pos);
+  const [x, y] = leapToScreen(pos);
   ctx.beginPath();
   ctx.arc(x, y, r, 0, Math.PI * 2);
   ctx.fillStyle = color;
@@ -36,7 +46,7 @@ function dot(pos, r, color) {
 }
 
 function glow(pos, r, color) {
-  const [x, y] = toCanvas(pos);
+  const [x, y] = leapToScreen(pos);
   const g = ctx.createRadialGradient(x, y, 0, x, y, r);
   g.addColorStop(0, color);
   g.addColorStop(1, 'transparent');
@@ -46,12 +56,11 @@ function glow(pos, r, color) {
   ctx.fill();
 }
 
-// ── Skeleton mode ───────────────────────────────────────────────
-
-function drawSkeleton(hands) {
+function drawHands(hands) {
   for (const hand of hands) {
     if (hand.palmPosition) {
-      dot(hand.palmPosition, 5, 'rgba(255,255,255,0.35)');
+      glow(hand.palmPosition, 40, accentGlow);
+      dot(hand.palmPosition, 4, accentColor);
     }
 
     if (!hand.fingers) continue;
@@ -62,98 +71,49 @@ function drawSkeleton(hands) {
           const prev = bone.prevJoint;
           const next = bone.nextJoint;
           if (prev && next) {
-            line(prev, next, 'rgba(255,255,255,0.5)', 1.5);
-            dot(next, 2, 'rgba(255,255,255,0.75)');
+            line(prev, next, accentColor, 1.8);
+            dot(next, 2.5, accentColor);
           }
         }
         if (hand.palmPosition && finger.bones[0]?.prevJoint) {
-          line(hand.palmPosition, finger.bones[0].prevJoint, 'rgba(255,255,255,0.18)', 1);
+          line(hand.palmPosition, finger.bones[0].prevJoint, accentGlow, 1);
         }
       } else if (finger.tipPosition && hand.palmPosition) {
-        line(hand.palmPosition, finger.tipPosition, 'rgba(255,255,255,0.3)', 1);
-        dot(finger.tipPosition, 2.5, 'rgba(255,255,255,0.7)');
+        line(hand.palmPosition, finger.tipPosition, accentColor, 1.2);
+        dot(finger.tipPosition, 3, accentColor);
       }
     }
   }
 }
 
-// ── IR mode ─────────────────────────────────────────────────────
-
-function drawIR(hands) {
-  for (const hand of hands) {
-    if (hand.palmPosition) {
-      glow(hand.palmPosition, 35, 'rgba(120,255,160,0.25)');
-    }
-
-    if (!hand.fingers) continue;
-
-    for (const finger of hand.fingers) {
-      if (finger.bones && finger.bones.length > 0) {
-        for (const bone of finger.bones) {
-          const prev = bone.prevJoint;
-          const next = bone.nextJoint;
-          if (next) glow(next, 10, 'rgba(120,255,160,0.35)');
-          if (prev && next) {
-            const [ax, ay] = toCanvas(prev);
-            const [bx, by] = toCanvas(next);
-            ctx.beginPath();
-            ctx.moveTo(ax, ay);
-            ctx.lineTo(bx, by);
-            ctx.strokeStyle = 'rgba(120,255,160,0.2)';
-            ctx.lineWidth = 6;
-            ctx.stroke();
-            ctx.strokeStyle = 'rgba(180,255,200,0.45)';
-            ctx.lineWidth = 2;
-            ctx.stroke();
-          }
-        }
-      } else if (finger.tipPosition) {
-        glow(finger.tipPosition, 14, 'rgba(120,255,160,0.45)');
-      }
-    }
-  }
+function resize() {
+  if (!canvasEl) return;
+  canvasEl.width  = window.innerWidth;
+  canvasEl.height = window.innerHeight;
 }
 
 // ── Public API ──────────────────────────────────────────────────
 
-export function initTrackingView() {
-  const canvasEl = document.getElementById('tracking-canvas');
+export function initTrackingView(camera) {
+  canvasEl = document.getElementById('tracking-canvas');
   if (!canvasEl) return;
   ctx = canvasEl.getContext('2d');
-
-  const btn = document.getElementById('tracking-toggle');
-  if (btn) {
-    btn.addEventListener('click', () => {
-      mode = mode === 'skeleton' ? 'ir' : 'skeleton';
-      btn.textContent = mode === 'skeleton' ? 'SKEL' : 'IR';
-    });
-  }
+  cam = camera;
+  resize();
+  window.addEventListener('resize', resize);
 }
 
 export function updateTrackingView(hands) {
-  if (!ctx) return;
+  if (!ctx || !cam) return;
+  ctx.clearRect(0, 0, canvasEl.width, canvasEl.height);
+  if (!hands || hands.length === 0) return;
+  drawHands(hands);
+}
 
-  ctx.clearRect(0, 0, W, H);
-
-  // Reference line at typical palm height (~200mm)
-  const refY = (1 - (200 - 30) / 350) * H;
-  ctx.beginPath();
-  ctx.moveTo(0, refY);
-  ctx.lineTo(W, refY);
-  ctx.strokeStyle = 'rgba(255,255,255,0.05)';
-  ctx.lineWidth = 1;
-  ctx.setLineDash([4, 4]);
-  ctx.stroke();
-  ctx.setLineDash([]);
-
-  if (!hands || hands.length === 0) {
-    ctx.fillStyle = 'rgba(255,255,255,0.15)';
-    ctx.font = '10px "JetBrains Mono", monospace';
-    ctx.textAlign = 'center';
-    ctx.fillText('NO HANDS DETECTED', W / 2, H / 2);
-    return;
-  }
-
-  if (mode === 'skeleton') drawSkeleton(hands);
-  else drawIR(hands);
+export function setTrackingColor(hexColor) {
+  const r = (hexColor >> 16) & 255;
+  const g = (hexColor >> 8)  & 255;
+  const b =  hexColor & 255;
+  accentColor = `rgba(${r},${g},${b},0.6)`;
+  accentGlow  = `rgba(${r},${g},${b},0.18)`;
 }

@@ -379,11 +379,16 @@ export function createParticleSystem(scene) {
     return Array.from(positions);
   }
 
+  function setColor(hex) {
+    mat.color.setHex(hex);
+  }
+
   return {
     points,
     update,
     getDisplacementMagnitude,
     getParticlePositions,
+    setColor,
     freeze()  { frozen = true; },
     unfreeze(){ frozen = false; },
     isFrozen(){ return frozen; },

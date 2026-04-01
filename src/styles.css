@@ -316,51 +316,14 @@ body {
   color: rgba(255, 255, 255, 1);
 }
 
-/* ── Live Tracking View ── */
-#leap-camera-view {
-  position: absolute;
-  top: 1rem;
-  right: 1rem;
-  z-index: 10;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 6px;
-  overflow: hidden;
-  background: rgba(0, 0, 0, 0.6);
-  backdrop-filter: blur(4px);
-}
-
-#tracking-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 0.3rem 0.55rem;
-  font-family: 'JetBrains Mono', monospace;
-  font-size: 0.5rem;
-  color: rgba(255, 255, 255, 0.45);
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
-}
-
-#tracking-toggle {
-  background: rgba(255, 255, 255, 0.07);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  color: rgba(255, 255, 255, 0.55);
-  font-family: 'JetBrains Mono', monospace;
-  font-size: 0.45rem;
-  padding: 0.12rem 0.4rem;
-  border-radius: 3px;
-  cursor: pointer;
-  letter-spacing: 0.05em;
-  transition: background 0.2s;
-}
-
-#tracking-toggle:hover {
-  background: rgba(255, 255, 255, 0.12);
-}
-
+/* ── Hand Tracking Overlay ── */
 #tracking-canvas {
-  display: block;
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 5;
+  pointer-events: none;
 }
 
 /* ── Countdown Overlay ── */
