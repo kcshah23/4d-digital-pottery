@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-4D Digital Pottery — a hand-tracked immersive pottery sculpting experience. Users sculpt a 50,000-particle point cloud pot using Leap Motion hand gestures, with spring-mass physics, bloom post-processing, and Web Audio feedback. A postcard feature captures webcam + clay snapshots and emails them via EmailJS.
+4D Digital Pottery — a hand-tracked immersive pottery sculpting experience. Users sculpt a 50,000-particle point cloud pot using Leap Motion hand gestures, with spring-mass physics, bloom post-processing, and Web Audio feedback. Finished pots are saved to a Supabase-backed persistent gallery with image uploads and 3D particle data.
 
 ## Commands
 
@@ -33,8 +33,7 @@ Transforms Leap hand data to particle-system local space, classifies gestures:
 - **Pinch** (pinchStrength > 0.8): wall pull — moves particles at Y-band toward index tip
 - **Two palms**: dynamic width — palm distance scales pot radius
 - **Flat palm** (grab < 0.2, pinch < 0.3): Laplacian smoothing
-- **Fist** (grabStrength > 0.8): reset sculpt offsets
-- **Two-hand pinch**: triggers postcard/finish flow
+- **Fist** (grabStrength > 0.8, held 1s): triggers 3-2-1 countdown → save flow
 
 ### Leap Motion Integration
 - `src/utils/leapCoordinates.js` — converts Leap mm coordinates to Three.js world space (scale 0.002, Y offset -0.15, Z negated)
@@ -47,8 +46,21 @@ A standalone MCP server (using `@modelcontextprotocol/sdk`) that connects to the
 ### Audio (`src/audio/audioManager.js`)
 Raw Web Audio API — no library. Swoosh is generated white noise through a low-pass filter modulated by palm velocity. Squish plays `/squish.mp3` triggered by displacement magnitude changes.
 
-### Postcard (`src/postcard/postcardManager.js`)
-Captures webcam via `getUserMedia`, captures Three.js canvas, composites via `html2canvas`, sends via EmailJS. Config (`EMAILJS_CONFIG`) is at the top of `src/main.js`.
+### Capture (`src/postcard/postcardManager.js`)
+Captures Three.js canvas and composites via `html2canvas`. Used to generate the clay snapshot for gallery uploads.
+
+### Supabase Integration (`src/supabase/`)
+- `supabaseClient.js` — singleton Supabase client initialized from CDN-loaded `window.supabase`
+- `galleryService.js` — uploads postcard PNGs to `postcard-images` storage bucket, CRUD for `user_postcard_gallery` table (stores image URL + 50k particle positions as JSONB)
+
+### Gallery (`gallery.html`, `src/gallery.js`, `src/gallery.css`)
+Standalone page at `/gallery.html` that fetches all saved pots from Supabase and renders a responsive grid. Each pot shows its image, potter name, and date.
+
+### Hand Tracking Overlay (`src/tracking/handVisualizer.js`)
+Full-screen transparent canvas overlay that draws the Leap hand skeleton projected through the Three.js camera, so hands visually overlap the particle cloud.
+
+### Color System
+25 bright neon colors cycle per pot session. Color is applied to both particles and hand skeleton overlay. UnrealBloom makes them glow.
 
 ## Key Conventions
 
