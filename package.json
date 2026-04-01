@@ -13,10 +13,9 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "three": "^0.168.0",
+    "html2canvas": "^1.4.1",
     "leapjs": "^0.6.4",
-    "@emailjs/browser": "^4.4.1",
-    "html2canvas": "^1.4.1"
+    "three": "^0.168.0"
   },
   "devDependencies": {
     "concurrently": "^9.1.0",

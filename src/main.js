@@ -18,20 +18,15 @@ import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 
 import { getHandData, getHandPositions } from './utils/leapCoordinates.js';
 import { createParticleSystem } from './particles/particleSystem.js';
+import { initTrackingView, updateTrackingView } from './tracking/handVisualizer.js';
 import {
   initAudio, resumeAudio, updateSwoosh, loadSquishSound, playSquish,
+  updateContactBuzz, playWaterSquish, updateRotationHum,
 } from './audio/audioManager.js';
-import {
-  captureWebcam, captureClayCanvas, capturePostcardAsImage, sendPostcardEmail,
-} from './postcard/postcardManager.js';
+import { captureClayCanvas } from './postcard/postcardManager.js';
+import { uploadPostcardImage, saveToGallery } from './supabase/galleryService.js';
 
 // ── Config ──────────────────────────────────────────────────────
-
-const EMAILJS_CONFIG = {
-  publicKey: 'YOUR_PUBLIC_KEY',
-  serviceId: 'YOUR_SERVICE_ID',
-  templateId: 'YOUR_TEMPLATE_ID',
-};
 
 const LEAP_CONFIG = { scale: 0.002, offsetY: -0.15, offsetZ: 0 };
 
@@ -40,33 +35,60 @@ const BASELINE_PALM_DIST = 0.28;
 // ── DOM ─────────────────────────────────────────────────────────
 
 let canvas;
-const leapStatus       = document.getElementById('leap-status');
-const instructions     = document.getElementById('instructions');
-const postcardOverlay  = document.getElementById('postcard-overlay');
-const webcamSnapshot   = document.getElementById('webcam-snapshot');
-const claySnapshot     = document.getElementById('clay-snapshot');
-const postcardForm     = document.getElementById('postcard-form');
-const sendStatus       = document.getElementById('send-status');
-const closePostcardBtn = document.getElementById('close-postcard');
-const postcardEl       = document.getElementById('postcard');
+const leapStatus    = document.getElementById('leap-status');
+const instructions  = document.getElementById('instructions');
 
-// Gesture guide indicators
+// Save overlay
+const saveOverlay   = document.getElementById('save-overlay');
+const claySnapshot  = document.getElementById('clay-snapshot');
+const saveForm      = document.getElementById('save-form');
+const saveStatus    = document.getElementById('save-status');
+const saveActions   = document.getElementById('save-actions');
+const btnNewPot     = document.getElementById('btn-new-pot');
+const btnViewGallery = document.getElementById('btn-view-gallery');
+
+
+// Gesture guide indicators (remapped)
+const gFist   = document.getElementById('g-fist');
+const gSmooth = document.getElementById('g-smooth');
 const gPinch  = document.getElementById('g-pinch');
 const gWidth  = document.getElementById('g-width');
-const gSmooth = document.getElementById('g-smooth');
-const gReset  = document.getElementById('g-reset');
+
+// Countdown + flash
+const countdownOverlay = document.getElementById('countdown-overlay');
+const countdownText    = document.getElementById('countdown-text');
+const flashOverlay     = document.getElementById('flash-overlay');
 
 // ── State ───────────────────────────────────────────────────────
 
 let scene, camera, renderer, composer;
 let particleSys;
-let lastHandData    = [];   // per-hand rich data
-let lastAllTips     = [];   // all palm+finger positions
+let lastHandData    = [];
+let lastAllTips     = [];
 let palmVelocityMag = 0;
 let lastDisplacementMag = 0;
 let leapConnected   = false;
-let finishGestureCooldown = 0;
 let lastTime = 0;
+let isFinishing = false;
+let lastMaxPinch = 0;
+let pinchCooldown = 0;
+
+// Height control (two-hand Y velocity accumulation)
+let heightTarget = 1.0;
+
+// Width memory (hold last scale for 2s after two hands leave)
+let twoHandsActive = false;
+let twoHandsLostTime = 0;
+let memorizedRadius = 1.0;
+const WIDTH_HOLD = 2.0;
+const WIDTH_FADE = 1.0;
+
+// Fist-hold photo trigger (requires 1s hold to avoid accidental triggers)
+let fistHoldTime = 0;
+const FIST_HOLD_REQUIRED = 1.0;
+
+// Raw LeapJS hands for tracking visualizer
+let rawFrameHands = [];
 
 // ── Three.js + Bloom ────────────────────────────────────────────
 
@@ -112,6 +134,7 @@ function initLeap() {
       if (!frame.hands || frame.hands.length === 0) {
         lastHandData = [];
         lastAllTips  = [];
+        rawFrameHands = [];
         palmVelocityMag *= 0.92;
         return;
       }
@@ -140,16 +163,7 @@ function initLeap() {
       lastHandData    = hands;
       lastAllTips     = tips;
       palmVelocityMag = velSum;
-
-      // Two-hand pinch → finish
-      if (finishGestureCooldown <= 0 && frame.hands.length >= 2) {
-        const pinches = frame.hands.filter((h) => (h.pinchStrength || 0) > 0.7);
-        if (pinches.length >= 2) {
-          finishGestureCooldown = 90;
-          triggerFinish();
-        }
-      }
-      if (finishGestureCooldown > 0) finishGestureCooldown--;
+      rawFrameHands   = frame.hands;
     }
   );
 
@@ -186,19 +200,29 @@ function initLeap() {
 // ── Gesture Processing ──────────────────────────────────────────
 
 function processGestures(dt) {
+  const now = performance.now() * 0.001;
+
+  if (isFinishing) {
+    gFist?.classList.remove('gesture-active');
+    gSmooth?.classList.remove('gesture-active');
+    gPinch?.classList.remove('gesture-active');
+    gWidth?.classList.remove('gesture-active');
+    fistHoldTime = 0;
+    return { hasHands: false, allTipsLocal: [], wallPullers: [], smoothPalms: [], resetFist: false, radiusScale: 1.0, heightScale: heightTarget };
+  }
+
   const hasHands = lastHandData.length > 0;
   const pts = particleSys.points;
 
-  // Transform all tip positions to local space
   const allTipsLocal = lastAllTips.map((p) => {
     const v = new THREE.Vector3(p.x, p.y, p.z);
     pts.worldToLocal(v);
     return { x: v.x, y: v.y, z: v.z };
   });
 
-  const wallPullers = [];
   const smoothPalms = [];
-  let resetFist   = false;
+  let resetFist = false;
+  let fistDetected = false;
   let radiusScale = 1.0;
   let isWidthGesture = false;
 
@@ -208,78 +232,178 @@ function processGestures(dt) {
     const palmLocal = new THREE.Vector3(hd.palm.x, hd.palm.y, hd.palm.z);
     pts.worldToLocal(palmLocal);
 
-    // Fist: grabStrength > 0.8 takes priority
+    // Fist → photo (grabStrength > 0.8)
     if (hd.grabStrength > 0.8) {
+      fistDetected = true;
+    }
+    // Pinch → reset clay (pinchStrength > 0.9)
+    else if (hd.pinchStrength > 0.9) {
       resetFist = true;
     }
-    // Pinch wall pull: pinchStrength > 0.8, not a fist
-    else if (hd.pinchStrength > 0.8 && hd.indexTip) {
-      const tipLocal = new THREE.Vector3(hd.indexTip.x, hd.indexTip.y, hd.indexTip.z);
-      pts.worldToLocal(tipLocal);
-      wallPullers.push({ tip: { x: tipLocal.x, y: tipLocal.y, z: tipLocal.z } });
-    }
-    // Flat palm smoothing: grabStrength < 0.2 and not pinching
+    // Flat palm → smooth (low grab + low pinch, extended fingers)
     else if (hd.grabStrength < 0.2 && hd.pinchStrength < 0.3) {
       smoothPalms.push({ palm: { x: palmLocal.x, y: palmLocal.y, z: palmLocal.z } });
     }
   }
 
-  // Dynamic width: distance between left and right palms
+  // Fist hold timer → trigger photo after 1s
+  if (fistDetected) {
+    fistHoldTime += dt;
+    if (fistHoldTime >= FIST_HOLD_REQUIRED) {
+      triggerFinish();
+      fistHoldTime = 0;
+    }
+  } else {
+    fistHoldTime = 0;
+  }
+
+  // ── Two-hand controls: width + height ──
   if (lastHandData.length >= 2) {
     const left  = lastHandData.find((h) => h.type === 'left');
     const right = lastHandData.find((h) => h.type === 'right');
+
+    // Width: horizontal palm distance
     if (left?.palm && right?.palm) {
       const palmDist = Math.abs(left.palm.x - right.palm.x);
       radiusScale = Math.max(0.35, Math.min(2.2, palmDist / BASELINE_PALM_DIST));
+      memorizedRadius = radiusScale;
+      twoHandsActive = true;
       isWidthGesture = true;
+    }
+
+    // Height: average Y velocity of both hands
+    let avgYVel = 0;
+    let velCount = 0;
+    for (const hd of lastHandData) {
+      if (hd.palmVelocityY !== undefined) {
+        avgYVel += hd.palmVelocityY;
+        velCount++;
+      }
+    }
+    if (velCount > 0) {
+      avgYVel /= velCount;
+      if (Math.abs(avgYVel) > 50) {
+        heightTarget += avgYVel * 0.0012 * dt;
+        heightTarget = Math.max(0.4, Math.min(2.5, heightTarget));
+      }
+    }
+  } else {
+    // Width memory: hold for 2s then fade to 1.0
+    if (twoHandsActive) {
+      twoHandsLostTime = now;
+      twoHandsActive = false;
+    }
+    const elapsed = now - twoHandsLostTime;
+    if (twoHandsLostTime > 0 && elapsed < WIDTH_HOLD) {
+      radiusScale = memorizedRadius;
+    } else if (twoHandsLostTime > 0 && elapsed < WIDTH_HOLD + WIDTH_FADE) {
+      const t = (elapsed - WIDTH_HOLD) / WIDTH_FADE;
+      radiusScale = memorizedRadius + (1.0 - memorizedRadius) * t;
     }
   }
 
   // Update gesture guide highlights
-  gPinch?.classList.toggle('gesture-active',  wallPullers.length > 0);
-  gWidth?.classList.toggle('gesture-active',  isWidthGesture);
+  gFist?.classList.toggle('gesture-active', fistDetected && fistHoldTime > 0.3);
   gSmooth?.classList.toggle('gesture-active', smoothPalms.length > 0);
-  gReset?.classList.toggle('gesture-active',  resetFist);
+  gPinch?.classList.toggle('gesture-active', resetFist);
+  gWidth?.classList.toggle('gesture-active', isWidthGesture);
 
   return {
     hasHands,
     allTipsLocal,
-    wallPullers,
+    wallPullers: [],
     smoothPalms,
     resetFist,
     radiusScale,
+    heightScale: heightTarget,
   };
 }
 
-// ── Postcard ────────────────────────────────────────────────────
+// ── Finish → Save to Gallery ─────────────────────────────────────
 
-function triggerFinish() { showPostcard(); }
+let capturedClayDataUrl = null;
 
-async function showPostcard() {
-  postcardOverlay.classList.remove('hidden');
-  try { webcamSnapshot.src = await captureWebcam(); }
-  catch {
-    webcamSnapshot.src =
-      'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="200" height="200"%3E' +
-      '%3Crect fill="%23222" width="200" height="200"/%3E' +
-      '%3Ctext fill="%23555" x="50%25" y="50%25" text-anchor="middle" dy=".3em"%3ENo camera%3C/text%3E%3C/svg%3E';
+function wait(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+async function triggerFinish() {
+  if (isFinishing) return;
+  isFinishing = true;
+
+  particleSys.freeze();
+
+  countdownOverlay.classList.remove('hidden');
+
+  const steps = [
+    { text: '3', delay: 1000 },
+    { text: '2', delay: 1000 },
+    { text: '1', delay: 1000 },
+  ];
+
+  for (const step of steps) {
+    countdownText.textContent = step.text;
+    countdownText.style.animation = 'none';
+    void countdownText.offsetHeight;
+    countdownText.style.animation = '';
+    await wait(step.delay);
   }
-  claySnapshot.src = captureClayCanvas(canvas);
+
+  flashOverlay.classList.remove('hidden');
+  flashOverlay.style.animation = 'none';
+  void flashOverlay.offsetHeight;
+  flashOverlay.style.animation = '';
+
+  capturedClayDataUrl = captureClayCanvas(canvas);
+
+  await wait(650);
+  flashOverlay.classList.add('hidden');
+  countdownOverlay.classList.add('hidden');
+
+  claySnapshot.src = capturedClayDataUrl;
+  saveForm.classList.remove('hidden');
+  saveActions.classList.add('hidden');
+  saveStatus.textContent = '';
+  saveOverlay.classList.remove('hidden');
 }
 
-async function handleSendPostcard(e) {
+async function handleSave(e) {
   e.preventDefault();
-  sendStatus.textContent = 'Sending…';
+  const name = document.getElementById('potter-name').value.trim();
+  if (!name) return;
+
+  const btn = document.getElementById('save-btn');
+  btn.disabled = true;
+  saveStatus.textContent = 'Saving…';
+
   try {
-    const img = await capturePostcardAsImage(postcardEl);
-    await sendPostcardEmail(EMAILJS_CONFIG, {
-      to_email: document.getElementById('email-to').value,
-      from_name: document.getElementById('from-name').value,
-      message: document.getElementById('message').value,
-      postcard_image: img,
+    saveStatus.textContent = 'Uploading image…';
+    const publicUrl = await uploadPostcardImage(capturedClayDataUrl, name);
+
+    saveStatus.textContent = 'Saving to gallery…';
+    const positions = particleSys.getParticlePositions();
+    await saveToGallery({
+      user_name: name,
+      user_email: '',
+      postcard_image_url: publicUrl,
+      clay_model_data: { positions },
     });
-    sendStatus.textContent = 'Postcard sent!';
-  } catch (err) { sendStatus.textContent = 'Failed: ' + err.message; }
+
+    saveStatus.textContent = 'Saved!';
+    saveForm.classList.add('hidden');
+    saveActions.classList.remove('hidden');
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : (err?.text || JSON.stringify(err));
+    saveStatus.textContent = 'Failed: ' + msg;
+    btn.disabled = false;
+  }
+}
+
+function resetForNewPot() {
+  saveOverlay.classList.add('hidden');
+  particleSys.unfreeze();
+  isFinishing = false;
+  capturedClayDataUrl = null;
+  document.getElementById('potter-name').value = '';
+  document.getElementById('save-btn').disabled = false;
 }
 
 // ── Animation Loop ──────────────────────────────────────────────
@@ -289,18 +413,41 @@ function animate(time = 0) {
   const dt = Math.min(0.05, (time - lastTime) * 0.001);
   lastTime = time;
 
-  // Pottery wheel rotation
-  particleSys.points.rotation.y += 0.008;
+  // Pottery wheel rotation (respects dissolving damping + freeze)
+  const rotSpeed = 0.008 * particleSys.getRotationDamping();
+  if (!particleSys.isFrozen()) {
+    particleSys.points.rotation.y += rotSpeed;
+  }
 
-  // Process gestures and feed to particle system
   const gesture = processGestures(dt);
   particleSys.update(gesture, dt);
 
-  // Audio
+  // Audio: contact buzz (triangle osc modulated by palm distance from center)
+  const palmDist = lastHandData.length > 0 && lastHandData[0].palm
+    ? Math.sqrt(lastHandData[0].palm.x ** 2 + lastHandData[0].palm.z ** 2)
+    : 0;
+  updateContactBuzz(lastHandData.length > 0, palmDist);
+
+  // Audio: rotation hum (60Hz sine scaled by wheel speed)
+  updateRotationHum(rotSpeed);
+
+  // Audio: water squish on pinch spike > 0.9
+  const maxPinch = lastHandData.reduce((m, h) => Math.max(m, h.pinchStrength || 0), 0);
+  if (maxPinch > 0.9 && lastMaxPinch <= 0.9 && pinchCooldown <= 0) {
+    playWaterSquish();
+    pinchCooldown = 20;
+  }
+  lastMaxPinch = maxPinch;
+  if (pinchCooldown > 0) pinchCooldown--;
+
+  // Audio: swoosh + deformation squish
   const mag = particleSys.getDisplacementMagnitude();
   if (mag > 0.001 && mag > lastDisplacementMag * 1.15) playSquish(mag);
   lastDisplacementMag = mag;
   updateSwoosh(palmVelocityMag);
+
+  // Live tracking visualizer
+  updateTrackingView(rawFrameHands);
 
   composer.render();
 }
@@ -322,9 +469,12 @@ function boot() {
   });
 
   window.addEventListener('keydown', (e) => { if (e.key === 'f' || e.key === 'F') triggerFinish(); });
-  closePostcardBtn?.addEventListener('click', () => postcardOverlay.classList.add('hidden'));
-  postcardForm?.addEventListener('submit', handleSendPostcard);
 
+  saveForm?.addEventListener('submit', handleSave);
+  btnNewPot?.addEventListener('click', resetForNewPot);
+  btnViewGallery?.addEventListener('click', () => { window.location.href = '/gallery.html'; });
+
+  initTrackingView();
   animate();
   initLeap();
 }

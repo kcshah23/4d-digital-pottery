@@ -13,6 +13,8 @@
     <link rel="stylesheet" href="/src/styles.css" />
     <!-- LeapJS pre-built browser bundle (avoids Vite/Node module issues) -->
     <script src="/leap.min.js"></script>
+    <!-- Supabase JS client (CDN) -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   </head>
   <body>
     <div id="app">
@@ -31,65 +33,59 @@
       <div id="gesture-guide">
         <h3>MASTER POTTER GESTURES</h3>
         <ul>
-          <li id="g-pinch"><span class="gkey">[Pinch]</span> Pull &amp; Shape Walls</li>
-          <li id="g-width"><span class="gkey">[Two Hands]</span> Control Width</li>
+          <li id="g-fist"><span class="gkey">[Fist]</span> Take Photo</li>
           <li id="g-smooth"><span class="gkey">[Flat Palm]</span> Smooth Surface</li>
-          <li id="g-reset"><span class="gkey">[Fist]</span> Reset Clay</li>
+          <li id="g-pinch"><span class="gkey">[Pinch]</span> Reset Clay</li>
+          <li id="g-width"><span class="gkey">[Two Hands]</span> Width &amp; Height</li>
         </ul>
       </div>
 
-      <!-- Postcard Overlay (hidden until "Finish Masterpiece") -->
-      <div id="postcard-overlay" class="hidden">
-        <div id="postcard">
-          <h1>Your Digital Masterpiece</h1>
-          <div id="postcard-content">
-            <div id="postcard-images">
-              <div id="webcam-snapshot-container">
-                <img id="webcam-snapshot" alt="You" />
-                <span>You</span>
-              </div>
-              <div id="clay-snapshot-container">
-                <img id="clay-snapshot" alt="Your Clay" />
-                <span>Your Creation</span>
-              </div>
-            </div>
-            <form id="postcard-form">
-              <div class="form-group">
-                <label for="email-to">To (Email)</label>
-                <input
-                  type="email"
-                  id="email-to"
-                  name="to_email"
-                  placeholder="friend@example.com"
-                  required
-                />
-              </div>
-              <div class="form-group">
-                <label for="from-name">From (Name)</label>
-                <input
-                  type="text"
-                  id="from-name"
-                  name="from_name"
-                  placeholder="Your name"
-                  required
-                />
-              </div>
-              <div class="form-group">
-                <label for="message">A short message</label>
-                <textarea
-                  id="message"
-                  name="message"
-                  rows="4"
-                  placeholder="Write something special…"
-                ></textarea>
-              </div>
-              <button type="submit" id="send-postcard">Send Postcard</button>
-              <p id="send-status"></p>
-            </form>
+      <!-- Live Tracking View -->
+      <div id="leap-camera-view">
+        <div id="tracking-header">
+          <span>LIVE TRACKING VIEW</span>
+          <button id="tracking-toggle">SKEL</button>
+        </div>
+        <canvas id="tracking-canvas" width="280" height="200"></canvas>
+      </div>
+
+      <!-- Countdown Overlay -->
+      <div id="countdown-overlay" class="hidden">
+        <span id="countdown-text"></span>
+      </div>
+
+      <!-- Camera Flash -->
+      <div id="flash-overlay" class="hidden"></div>
+
+      <!-- Save Overlay (shown after countdown + flash) -->
+      <div id="save-overlay" class="hidden">
+        <div id="save-card">
+          <h1>Your Creation</h1>
+          <div id="save-preview">
+            <img id="clay-snapshot" alt="Your Clay" />
           </div>
-          <button id="close-postcard" aria-label="Close postcard">×</button>
+          <form id="save-form">
+            <div class="form-group">
+              <label for="potter-name">Your Name</label>
+              <input
+                type="text"
+                id="potter-name"
+                placeholder="Enter your name"
+                required
+              />
+            </div>
+            <button type="submit" id="save-btn">Save to Gallery</button>
+            <p id="save-status"></p>
+          </form>
+          <div id="save-actions" class="hidden">
+            <button id="btn-new-pot">Make Another</button>
+            <button id="btn-view-gallery">View Gallery</button>
+          </div>
         </div>
       </div>
+
+      <!-- Persistent gallery link -->
+      <a href="/gallery.html" id="open-gallery-btn">Gallery</a>
     </div>
 
     <script type="module" src="/src/main.js"></script>

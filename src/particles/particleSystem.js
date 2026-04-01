@@ -147,10 +147,23 @@ export function createParticleSystem(scene) {
   // ── Mutable state ─────────────────────────────────────────────
   let blend = 0;            // 0 = grid, 1 = pot
   let currentRScale = 1.0;  // smoothed radius scale
+  let currentHScale = 1.0;  // smoothed height scale
+  let frozen = false;
+
+  // Hand-removal state machine:
+  //   active → dissolving (2s hold, rotation decelerates) → fading (1.5s cubic ease to grid) → idle
+  const DISSOLVE_HOLD = 2.0;
+  const FADE_DURATION = 1.5;
+  let handState = 'idle';
+  let stateTimer = 0;
+  let prevHasHands = false;
+  let rotationDamping = 1.0;
 
   // ── Core update (called every frame) ──────────────────────────
 
   function update(gesture, dt) {
+    if (frozen) return;
+
     const {
       hasHands,
       allTipsLocal  = [],
@@ -158,14 +171,49 @@ export function createParticleSystem(scene) {
       smoothPalms   = [],
       resetFist     = false,
       radiusScale   = 1.0,
+      heightScale   = 1.0,
     } = gesture;
 
-    // ── Blend grid ↔ pot ──
-    blend = lerp(blend, hasHands ? 1 : 0, Math.min(1, dt * 3.5));
+    // ── Hand-removal state machine ──
+    if (hasHands) {
+      handState = 'active';
+      stateTimer = 0;
+      rotationDamping = 1.0;
+    } else if (prevHasHands) {
+      handState = 'dissolving';
+      stateTimer = 0;
+    }
+    prevHasHands = hasHands;
 
-    // ── Smooth the radius scale ──
+    if (handState === 'active') {
+      blend = lerp(blend, 1, Math.min(1, dt * 3.5));
+    } else if (handState === 'dissolving') {
+      stateTimer += dt;
+      rotationDamping = lerp(1.0, 0.3, Math.min(1, stateTimer / DISSOLVE_HOLD));
+      blend = 1.0;
+      if (stateTimer >= DISSOLVE_HOLD) {
+        handState = 'fading';
+        stateTimer = 0;
+      }
+    } else if (handState === 'fading') {
+      stateTimer += dt;
+      const t = Math.min(1, stateTimer / FADE_DURATION);
+      blend = 1.0 - t * t * t;   // cubic ease-in: slow departure, accelerating dissolve
+      rotationDamping = 0.3;
+      if (t >= 1) {
+        handState = 'idle';
+        rotationDamping = 1.0;
+      }
+    } else {
+      blend = lerp(blend, 0, Math.min(1, dt * 3.5));
+      rotationDamping = 1.0;
+    }
+
+    // ── Smooth the radius and height scales ──
     currentRScale = lerp(currentRScale, radiusScale, Math.min(1, dt * 4));
+    currentHScale = lerp(currentHScale, heightScale, Math.min(1, dt * 4));
     const rS = currentRScale;
+    const hS = currentHScale;
 
     // ── 1. Fist reset: fast decay of sculpt offsets ──
     if (resetFist) {
@@ -227,10 +275,10 @@ export function createParticleSystem(scene) {
       }
     }
 
-    // ── 4. Laplacian smoothing (flat palm) ──
-    const smoothR = 0.13;
+    // ── 4. Laplacian smoothing (flat palm) — strong, immediate, 5cm radius ──
+    const smoothR = 0.18;
     const smoothRSq = smoothR * smoothR;
-    const smoothF = 0.18;
+    const smoothF = 0.38;
     const structured = RINGS * PPR; // only smooth ring-structured particles
 
     for (let s = 0; s < smoothPalms.length; s++) {
@@ -300,7 +348,7 @@ export function createParticleSystem(scene) {
       const i3 = i * 3;
 
       const tx = gridPos[i3]     * ib + (potPos[i3]     * rS + sculptOff[i3])     * b;
-      const ty = gridPos[i3 + 1] * ib + (potPos[i3 + 1]      + sculptOff[i3 + 1]) * b;
+      const ty = gridPos[i3 + 1] * ib + (potPos[i3 + 1] * hS + sculptOff[i3 + 1]) * b;
       const tz = gridPos[i3 + 2] * ib + (potPos[i3 + 2] * rS + sculptOff[i3 + 2]) * b;
 
       velocities[i3]     = velocities[i3]     * velRetain + springPull * (tx - positions[i3]);
@@ -323,5 +371,22 @@ export function createParticleSystem(scene) {
     return sum / sculptOff.length;
   }
 
-  return { points, update, getDisplacementMagnitude };
+  /**
+   * Return a snapshot of all 50k particle positions as a plain array
+   * of [x, y, z, x, y, z, ...] suitable for JSON serialization.
+   */
+  function getParticlePositions() {
+    return Array.from(positions);
+  }
+
+  return {
+    points,
+    update,
+    getDisplacementMagnitude,
+    getParticlePositions,
+    freeze()  { frozen = true; },
+    unfreeze(){ frozen = false; },
+    isFrozen(){ return frozen; },
+    getRotationDamping() { return rotationDamping; },
+  };
 }

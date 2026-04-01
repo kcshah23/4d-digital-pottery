@@ -1,9 +1,8 @@
 /**
- * Postcard: webcam + clay snapshot, form, html2canvas, EmailJS.
+ * Capture utilities — webcam + clay snapshot + html2canvas composite.
  */
 
 import html2canvas from 'html2canvas';
-import emailjs from '@emailjs/browser';
 
 /** Capture webcam frame */
 export async function captureWebcam() {
@@ -33,27 +32,13 @@ export function captureClayCanvas(canvasEl) {
   return canvasEl.toDataURL('image/png');
 }
 
-/** Capture postcard DOM as image */
-export async function capturePostcardAsImage(postcardEl) {
-  const canvas = await html2canvas(postcardEl, {
+/** Capture a DOM element as an image data URL */
+export async function capturePostcardAsImage(el) {
+  const canvas = await html2canvas(el, {
     useCORS: true,
     allowTaint: true,
     backgroundColor: '#1a1918',
     scale: 2,
   });
   return canvas.toDataURL('image/png');
-}
-
-/**
- * Send postcard via EmailJS.
- * Requires: publicKey, serviceId, templateId in config.
- */
-export async function sendPostcardEmail(config, templateParams) {
-  const { publicKey, serviceId, templateId } = config;
-  if (!publicKey || !serviceId || !templateId) {
-    throw new Error('EmailJS config missing: set publicKey, serviceId, templateId');
-  }
-  await emailjs.init(publicKey);
-  const res = await emailjs.send(serviceId, templateId, templateParams);
-  return res;
 }

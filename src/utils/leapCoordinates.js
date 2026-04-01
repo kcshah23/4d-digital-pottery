@@ -77,6 +77,7 @@ export function getHandData(hand, config = {}) {
           hand.palmVelocity[2] ** 2
         )
       : 0,
+    palmVelocityY: hand.palmVelocity ? hand.palmVelocity[1] : 0,
     allTips: getHandPositions(hand, config),
   };
 }
