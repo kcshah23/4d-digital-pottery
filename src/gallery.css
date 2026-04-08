@@ -45,6 +45,15 @@ html, body {
   font-style: italic;
 }
 
+.gallery-intro {
+  font-size: 0.82rem !important;
+  line-height: 1.45;
+  font-style: normal !important;
+  opacity: 0.38 !important;
+  margin-top: 0.55rem;
+  max-width: 34rem;
+}
+
 #back-to-sculpt {
   font-family: 'JetBrains Mono', monospace;
   font-size: 0.75rem;
@@ -64,17 +73,19 @@ html, body {
   border-color: rgba(255, 255, 255, 0.25);
 }
 
-/* ── Grid ── */
+/* ── Grid: align tops so row height isn’t driven by one tall card ── */
 #gallery-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
   gap: 1.8rem;
+  align-items: start;
 }
 
 .gallery-card {
   display: flex;
   flex-direction: column;
-  gap: 0.6rem;
+  gap: 0.5rem;
+  align-items: stretch;
   transition: transform 0.2s;
 }
 
@@ -82,25 +93,32 @@ html, body {
   transform: translateY(-4px);
 }
 
-.gallery-card img {
+.gallery-card-visual {
+  position: relative;
   width: 100%;
-  aspect-ratio: 1;
-  object-fit: cover;
   border-radius: 10px;
+  overflow: hidden;
   border: 1px solid rgba(255, 255, 255, 0.06);
   background: #0a0a0a;
   transition: border-color 0.3s;
 }
 
-.gallery-card:hover img {
+.gallery-card:hover .gallery-card-visual {
   border-color: rgba(255, 255, 255, 0.18);
+}
+
+.gallery-card-visual img {
+  width: 100%;
+  aspect-ratio: 1;
+  object-fit: cover;
+  display: block;
 }
 
 .gallery-info {
   display: flex;
   justify-content: space-between;
   align-items: baseline;
-  padding: 0 0.15rem;
+  padding: 0.15rem 0.15rem 0;
 }
 
 .gallery-name {
@@ -112,6 +130,63 @@ html, body {
   font-family: 'JetBrains Mono', monospace;
   font-size: 0.65rem;
   opacity: 0.35;
+}
+
+.gallery-card-fact {
+  font-size: 0.8rem;
+  line-height: 1.45;
+  color: rgba(232, 228, 223, 0.82);
+  padding: 0.35rem 0.15rem 0;
+  margin: 0;
+  text-align: left;
+  hyphens: auto;
+  overflow-wrap: break-word;
+}
+
+.gallery-card-source {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.58rem;
+  letter-spacing: 0.02em;
+  line-height: 1.45;
+  color: rgba(255, 255, 255, 0.32);
+  margin: 0 0.15rem;
+  padding-bottom: 0.15rem;
+  word-break: break-word;
+}
+
+.gallery-card-source a {
+  color: rgba(160, 195, 255, 0.72);
+  text-decoration: none;
+  border-bottom: 1px solid rgba(160, 195, 255, 0.2);
+}
+
+.gallery-card-source a:hover {
+  color: rgba(190, 215, 255, 0.92);
+  border-bottom-color: rgba(190, 215, 255, 0.45);
+}
+
+.gallery-card-quote {
+  margin: 0.35rem 0.1rem 0;
+  padding: 0.5rem 0.45rem 0.55rem;
+  border-left: 2px solid rgba(255, 255, 255, 0.14);
+  font-style: italic;
+  font-size: 0.82rem;
+  line-height: 1.45;
+  color: rgba(232, 228, 223, 0.72);
+}
+
+.gallery-card-quote p {
+  margin: 0 0 0.35rem;
+}
+
+.gallery-card-quote cite {
+  display: block;
+  font-style: normal;
+  font-size: 0.72rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  font-family: 'JetBrains Mono', monospace;
+  color: rgba(255, 255, 255, 0.35);
 }
 
 /* ── States ── */
@@ -127,4 +202,17 @@ html, body {
   font-family: 'JetBrains Mono', monospace;
   font-size: 0.8rem;
   letter-spacing: 0.05em;
+}
+
+.gallery-error-detail {
+  display: block;
+  margin-top: 0.75rem;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.72rem;
+  letter-spacing: 0.02em;
+  color: rgba(255, 180, 160, 0.85);
+  line-height: 1.45;
+  max-width: 36rem;
+  margin-left: auto;
+  margin-right: auto;
 }

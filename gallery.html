@@ -11,7 +11,6 @@
       rel="stylesheet"
     />
     <link rel="stylesheet" href="/src/gallery.css" />
-    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   </head>
   <body>
     <div id="gallery-page">
@@ -19,9 +18,14 @@
         <div id="gallery-title">
           <h1>Community Gallery</h1>
           <p>Every pot ever sculpted, preserved forever.</p>
+          <p class="gallery-intro">
+            Facts are chosen to echo your vessel’s silhouette (tall neck, open bowl, belly, and so on) via
+            lightweight shape tags; each save stores that hint with the piece.
+          </p>
         </div>
         <a href="/" id="back-to-sculpt">Back to Sculpting</a>
       </header>
+
       <div id="gallery-grid"></div>
       <p id="gallery-empty" class="hidden">No pots yet — be the first to create one!</p>
       <p id="gallery-loading">Loading gallery…</p>

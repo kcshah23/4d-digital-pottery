@@ -49,7 +49,7 @@ export async function uploadPostcardImage(dataUrl, name) {
  * @param {string} entry.user_name
  * @param {string} entry.user_email
  * @param {string} entry.postcard_image_url  – public URL from storage upload
- * @param {Object} entry.clay_model_data     – { positions: number[] } (flat x,y,z array of 50k particles)
+ * @param {Object} entry.clay_model_data     – { positions, pot_shape_hint?, curatorial_fact?, pot_quote?, pot_color_hex? }
  * @returns {Promise<Object>} the inserted row
  */
 export async function saveToGallery({ user_name, user_email, postcard_image_url, clay_model_data }) {
@@ -66,22 +66,46 @@ export async function saveToGallery({ user_name, user_email, postcard_image_url,
 }
 
 /**
- * Fetch all gallery entries, newest first.
+ * Fetch gallery rows for the grid (image + metadata only).
+ * Uses RPC `gallery_list_rows` so Postgres never ships 50k particle positions per row
+ * (that caused statement timeouts on SELECT *).
+ *
+ * If the RPC is missing, falls back to a slim column select (no facts/quotes until you run
+ * `supabase/gallery_list_rows.sql` in the Supabase SQL Editor).
  *
  * @param {number} [limit=50]
  * @returns {Promise<Object[]>}
  */
 export async function fetchGallery(limit = 50) {
   const sb = getSupabaseClient();
+  const rowLimit = Math.min(500, Math.max(1, limit));
+
+  const rpc = await sb.rpc('gallery_list_rows', { row_limit: rowLimit });
+
+  if (!rpc.error && rpc.data) return rpc.data;
+
+  const missingFn =
+    rpc.error &&
+    (/function public\.gallery_list_rows/i.test(rpc.error.message || '') ||
+      /does not exist/i.test(rpc.error.message || '') ||
+      rpc.error.code === '42883');
+
+  if (!missingFn && rpc.error) {
+    throw new Error(`Gallery fetch failed: ${rpc.error.message}`);
+  }
 
   const { data, error } = await sb
     .from(TABLE)
-    .select('*')
+    .select('id, created_at, user_name, user_email, postcard_image_url')
     .order('created_at', { ascending: false })
-    .limit(limit);
+    .limit(rowLimit);
 
   if (error) throw new Error(`Gallery fetch failed: ${error.message}`);
-  return data;
+
+  return (data || []).map((row) => ({
+    ...row,
+    clay_model_data: {},
+  }));
 }
 
 /**

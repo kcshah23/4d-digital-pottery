@@ -13,19 +13,27 @@
     <link rel="stylesheet" href="/src/styles.css" />
     <!-- LeapJS pre-built browser bundle (avoids Vite/Node module issues) -->
     <script src="/leap.min.js"></script>
-    <!-- Supabase JS client (CDN) -->
-    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   </head>
   <body>
     <div id="app">
       <canvas id="canvas-3d"></canvas>
 
+      <!-- Literary quote + fact: fixed top, same data saved to gallery -->
+      <header id="studio-top-strip" aria-live="polite">
+        <blockquote id="studio-quote-block">
+          <p id="top-quote-text"></p>
+          <footer><cite id="top-quote-author"></cite></footer>
+        </blockquote>
+        <p id="top-fact-text" class="top-fact-line"></p>
+        <p id="top-fact-source" class="top-fact-source-line"></p>
+      </header>
+
       <!-- HUD: Instructions & Status -->
       <div id="hud">
         <p id="leap-status">Connecting to Leap Motion…</p>
         <p id="instructions">
-          Move your hands over the clay to sculpt. Pinch with both hands or press
-          <kbd>F</kbd> to finish your masterpiece.
+          Pinch to carve—move your hand up and down to shape from the foot to the rim. Two hands
+          set width and height; flat palm smooths. <kbd>R</kbd> resets. <kbd>F</kbd> or fist hold to finish.
         </p>
       </div>
 
@@ -33,10 +41,11 @@
       <div id="gesture-guide">
         <h3>MASTER POTTER GESTURES</h3>
         <ul>
-          <li id="g-fist"><span class="gkey">[Fist]</span> Take Photo</li>
-          <li id="g-smooth"><span class="gkey">[Flat Palm]</span> Smooth Surface</li>
-          <li id="g-pinch"><span class="gkey">[Pinch]</span> Reset Clay</li>
-          <li id="g-width"><span class="gkey">[Two Hands]</span> Width &amp; Height</li>
+          <li id="g-fist"><span class="gkey">[Fist]</span> Finish / photo</li>
+          <li id="g-smooth"><span class="gkey">[Flat Palm]</span> Smooth</li>
+          <li id="g-pinch"><span class="gkey">[Pinch]</span> Carve clay inward</li>
+          <li id="g-width"><span class="gkey">[Two Hands]</span> Width &amp; height</li>
+          <li id="g-reset"><span class="gkey">[R]</span> Reset cylinder</li>
         </ul>
       </div>
 

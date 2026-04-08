@@ -2,10 +2,11 @@
  * 4D Digital Pottery — Particle Cloud with Advanced Gestures
  *
  * Gesture map:
- *   [Pinch]      Index tip pulls/shapes walls at Y-band
- *   [Two Hands]  Palm distance scales pot radius
+ *   [Pinch]      Index tip carves inward (removes clay)
+ *   [Two Hands]  Palm distance scales cylinder radius; Y velocity adjusts height
  *   [Flat Palm]  Laplacian smoothing evens the surface
- *   [Fist]       Resets clay to base pot shape
+ *   [Fist]       Hold to finish / photo
+ *   [R]          Reset sculpt toward smooth cylinder
  *
  * Spring-mass physics give particles elastic, clay-like weight.
  */
@@ -24,13 +25,36 @@ import {
   updateContactBuzz, playWaterSquish, updateRotationHum,
 } from './audio/audioManager.js';
 import { captureClayCanvas } from './postcard/postcardManager.js';
+import { pickCuratorialFact, pickCuratorialFactForShape } from './gallery/potteryFacts.js';
+import { computePotShapeHint } from './gallery/potShapeProfile.js';
+import { pickPotQuote } from './gallery/potQuotes.js';
 import { uploadPostcardImage, saveToGallery } from './supabase/galleryService.js';
 
 // ── Config ──────────────────────────────────────────────────────
 
 const LEAP_CONFIG = { scale: 0.002, offsetY: -0.15, offsetZ: 0 };
 
+/** Matches `POT_HEIGHT` in particleSystem — clay occupies ±(this/2)*heightScale on Y. */
+const CLAY_POT_HEIGHT = 0.5;
+
+/**
+ * Leap hands sit in a narrow band of local Y; clay spans ±(CLAY_POT_HEIGHT/2)*heightScale.
+ * Map finger height so vertical motion can target bottom → top of the pot.
+ */
+function mapFingerYToClayColumn(localY, heightScale) {
+  const half = 0.5 * CLAY_POT_HEIGHT * heightScale;
+  const yBottom = -half;
+  const yTop = half;
+  const handLo = -0.12;
+  const handHi = 0.22;
+  const t = (localY - handLo) / (handHi - handLo);
+  const u = t <= 0 ? 0 : t >= 1 ? 1 : t;
+  return yBottom + u * (yTop - yBottom);
+}
+
 const BASELINE_PALM_DIST = 0.28;
+
+const PINCH_CARVE_MIN = 0.36;
 
 // 25 bright neon hues — glow-in-the-dark with bloom
 const GLOW_PALETTE = [
@@ -91,6 +115,12 @@ const gSmooth = document.getElementById('g-smooth');
 const gPinch  = document.getElementById('g-pinch');
 const gWidth  = document.getElementById('g-width');
 
+// Top strip: quote + curatorial fact (same objects saved to gallery)
+const topQuoteText   = document.getElementById('top-quote-text');
+const topQuoteAuthor = document.getElementById('top-quote-author');
+const topFactText    = document.getElementById('top-fact-text');
+const topFactSource  = document.getElementById('top-fact-source');
+
 // Countdown + flash
 const countdownOverlay = document.getElementById('countdown-overlay');
 const countdownText    = document.getElementById('countdown-text');
@@ -119,6 +149,11 @@ let twoHandsLostTime = 0;
 let memorizedRadius = 1.0;
 const WIDTH_HOLD = 2.0;
 const WIDTH_FADE = 1.0;
+
+/** Curatorial fact + pot quote for this session; chosen at session start (same as gallery save). */
+let sessionCuratorialFact = null;
+let sessionPotQuote = null;
+let pendingCylinderReset = false;
 
 // Fist-hold photo trigger (requires 1s hold to avoid accidental triggers)
 let fistHoldTime = 0;
@@ -181,7 +216,8 @@ function initLeap() {
         leapStatus.textContent = 'Leap Motion: Tracking';
         leapStatus.className = 'status-connected';
         instructions.textContent =
-          'Pinch to pull walls. Open both hands to set width. Flat palm smooths. Fist resets.';
+          'Pinch to carve (move hand up/down for the full height). Two hands: width & height. ' +
+          'Flat palm smooths. <kbd>R</kbd> resets. <kbd>F</kbd> or fist hold to finish.';
       }
 
       const hands = [];
@@ -236,6 +272,38 @@ function initLeap() {
 
 // ── Gesture Processing ──────────────────────────────────────────
 
+function fillTopFactSourceLine(entry) {
+  if (!topFactSource || !entry) return;
+  topFactSource.textContent = '';
+  const src = typeof entry.source === 'string' ? entry.source.trim() : '';
+  if (!src) return;
+  topFactSource.append('Source: ');
+  const url = typeof entry.url === 'string' ? entry.url.trim() : '';
+  if (url) {
+    const a = document.createElement('a');
+    a.href = url;
+    a.target = '_blank';
+    a.rel = 'noopener noreferrer';
+    a.textContent = src;
+    topFactSource.append(a);
+  } else {
+    topFactSource.append(src);
+  }
+}
+
+function initStudioTopStrip() {
+  sessionCuratorialFact = pickCuratorialFact();
+  sessionPotQuote = pickPotQuote();
+  if (topQuoteText && sessionPotQuote) {
+    topQuoteText.textContent = `“${sessionPotQuote.text}”`;
+  }
+  if (topQuoteAuthor && sessionPotQuote) {
+    topQuoteAuthor.textContent = sessionPotQuote.author ? `— ${sessionPotQuote.author}` : '';
+  }
+  if (topFactText) topFactText.textContent = sessionCuratorialFact.fact;
+  fillTopFactSourceLine(sessionCuratorialFact);
+}
+
 function processGestures(dt) {
   const now = performance.now() * 0.001;
 
@@ -245,11 +313,21 @@ function processGestures(dt) {
     gPinch?.classList.remove('gesture-active');
     gWidth?.classList.remove('gesture-active');
     fistHoldTime = 0;
-    return { hasHands: false, allTipsLocal: [], wallPullers: [], smoothPalms: [], resetFist: false, radiusScale: 1.0, heightScale: heightTarget };
+    return {
+      sculptingEnabled: true,
+      allTipsLocal: [],
+      wallPullers: [],
+      smoothPalms: [],
+      resetSculpt: false,
+      radiusScale: 1.0,
+      heightScale: heightTarget,
+    };
   }
 
   const hasHands = lastHandData.length > 0;
   const pts = particleSys.points;
+
+  const sculptingEnabled = true;
 
   const allTipsLocal = lastAllTips.map((p) => {
     const v = new THREE.Vector3(p.x, p.y, p.z);
@@ -257,8 +335,11 @@ function processGestures(dt) {
     return { x: v.x, y: v.y, z: v.z };
   });
 
+  const wallPullers = [];
   const smoothPalms = [];
-  let resetFist = false;
+  let resetSculpt = pendingCylinderReset;
+  pendingCylinderReset = false;
+
   let fistDetected = false;
   let radiusScale = 1.0;
   let isWidthGesture = false;
@@ -272,13 +353,24 @@ function processGestures(dt) {
     // Fist → photo (grabStrength > 0.8)
     if (hd.grabStrength > 0.8) {
       fistDetected = true;
+      continue;
     }
-    // Pinch → reset clay (pinchStrength > 0.9)
-    else if (hd.pinchStrength > 0.9) {
-      resetFist = true;
+
+    // Pinch → carve at index tip
+    if (
+      sculptingEnabled &&
+      hd.pinchStrength > PINCH_CARVE_MIN &&
+      hd.indexTip
+    ) {
+      const v = new THREE.Vector3(hd.indexTip.x, hd.indexTip.y, hd.indexTip.z);
+      pts.worldToLocal(v);
+      const clayY = mapFingerYToClayColumn(v.y, heightTarget);
+      wallPullers.push({ tip: { x: v.x, y: clayY, z: v.z } });
+      continue;
     }
-    // Flat palm → smooth (low grab + low pinch, extended fingers)
-    else if (hd.grabStrength < 0.2 && hd.pinchStrength < 0.3) {
+
+    // Flat palm → smooth (low grab + low pinch)
+    if (sculptingEnabled && hd.grabStrength < 0.2 && hd.pinchStrength < 0.3) {
       smoothPalms.push({ palm: { x: palmLocal.x, y: palmLocal.y, z: palmLocal.z } });
     }
   }
@@ -341,16 +433,16 @@ function processGestures(dt) {
 
   // Update gesture guide highlights
   gFist?.classList.toggle('gesture-active', fistDetected && fistHoldTime > 0.3);
-  gSmooth?.classList.toggle('gesture-active', smoothPalms.length > 0);
-  gPinch?.classList.toggle('gesture-active', resetFist);
+  gSmooth?.classList.toggle('gesture-active', sculptingEnabled && smoothPalms.length > 0);
+  gPinch?.classList.toggle('gesture-active', sculptingEnabled && wallPullers.length > 0);
   gWidth?.classList.toggle('gesture-active', isWidthGesture);
 
   return {
-    hasHands,
+    sculptingEnabled,
     allTipsLocal,
-    wallPullers: [],
+    wallPullers,
     smoothPalms,
-    resetFist,
+    resetSculpt,
     radiusScale,
     heightScale: heightTarget,
   };
@@ -417,11 +509,23 @@ async function handleSave(e) {
 
     saveStatus.textContent = 'Saving to gallery…';
     const positions = particleSys.getParticlePositions();
+    const pot_shape_hint = computePotShapeHint(positions);
+    const curatorial_fact = sessionCuratorialFact
+      ? sessionCuratorialFact
+      : pickCuratorialFactForShape(pot_shape_hint, `${name}_${Date.now()}`);
+    const pot_quote = sessionPotQuote || pickPotQuote();
+    const pot_color_hex = particleSys.getColorHex();
     await saveToGallery({
       user_name: name,
       user_email: '',
       postcard_image_url: publicUrl,
-      clay_model_data: { positions },
+      clay_model_data: {
+        positions,
+        pot_shape_hint,
+        curatorial_fact,
+        pot_quote,
+        pot_color_hex,
+      },
     });
 
     saveStatus.textContent = 'Saved! Opening gallery…';
@@ -441,6 +545,9 @@ function resetForNewPot() {
   capturedClayDataUrl = null;
   document.getElementById('potter-name').value = '';
   document.getElementById('save-btn').disabled = false;
+  sessionCuratorialFact = null;
+  sessionPotQuote = null;
+  initStudioTopStrip();
   applyNextColor();
 }
 
@@ -506,13 +613,19 @@ function boot() {
     composer.setSize(window.innerWidth, window.innerHeight);
   });
 
-  window.addEventListener('keydown', (e) => { if (e.key === 'f' || e.key === 'F') triggerFinish(); });
+  window.addEventListener('keydown', (e) => {
+    const tag = e.target && e.target.tagName;
+    if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+    if (e.key === 'f' || e.key === 'F') triggerFinish();
+    if (e.key === 'r' || e.key === 'R') pendingCylinderReset = true;
+  });
 
   saveForm?.addEventListener('submit', handleSave);
   btnNewPot?.addEventListener('click', resetForNewPot);
   btnViewGallery?.addEventListener('click', () => { window.location.href = '/gallery.html'; });
 
   initTrackingView(camera);
+  initStudioTopStrip();
   applyNextColor();
   animate();
   initLeap();
