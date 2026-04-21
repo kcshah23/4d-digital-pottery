@@ -45,9 +45,14 @@ function findBinary() {
 
 const bin = findBinary();
 if (!bin) {
-  console.warn('[leap-bridge] Binary not found in', BUILD_DIR);
-  console.warn('[leap-bridge] Run: npm run setup-leap-bridge');
-  process.exit(0);
+  console.error('');
+  console.error('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+  console.error('[leap-bridge] NO BINARY — nothing will listen on port 6437.');
+  console.error('[leap-bridge] Build once:  npm run setup-leap-bridge');
+  console.error('[leap-bridge] Expected in: ', BUILD_DIR);
+  console.error('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+  console.error('');
+  process.exit(1);
 }
 
 console.log('[leap-bridge] Starting:', bin);

@@ -33,7 +33,7 @@ body {
   top: 0;
   left: 0;
   right: 0;
-  padding: 6.25rem 1.5rem 1rem;
+  padding: 1rem 1.5rem;
   display: flex;
   flex-direction: column;
   gap: 0.35rem;
@@ -73,23 +73,6 @@ body {
 .status-error {
   background: rgba(255, 80, 80, 0.1);
   color: #e85555;
-}
-
-#instructions {
-  font-size: 0.9rem;
-  opacity: 0.55;
-  max-width: 480px;
-  line-height: 1.35;
-}
-
-#instructions kbd {
-  display: inline-block;
-  padding: 0.08em 0.3em;
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 3px;
-  font-family: 'JetBrains Mono', monospace;
-  font-size: 0.85em;
 }
 
 .hidden {
@@ -254,68 +237,6 @@ body {
   border-color: rgba(255, 255, 255, 0.25);
 }
 
-/* ── Gesture Guide ── */
-#gesture-guide {
-  position: absolute;
-  bottom: 35px;
-  left: 35px;
-  z-index: 10;
-  pointer-events: none;
-  animation: guide-pulse 3.5s ease-in-out infinite;
-}
-
-@keyframes guide-pulse {
-  0%, 100% { opacity: 0.45; }
-  50%      { opacity: 0.7; }
-}
-
-#gesture-guide h3 {
-  font-family: 'JetBrains Mono', monospace;
-  font-size: 0.7rem;
-  font-weight: 600;
-  letter-spacing: 0.14em;
-  color: rgba(255, 255, 255, 0.6);
-  margin-bottom: 0.65rem;
-  text-transform: uppercase;
-}
-
-#gesture-guide ul {
-  list-style: none;
-  display: flex;
-  flex-direction: column;
-  gap: 0.45rem;
-}
-
-#gesture-guide li {
-  font-family: 'JetBrains Mono', monospace;
-  font-size: 0.85rem;
-  font-weight: 500;
-  color: rgba(255, 255, 255, 0.4);
-  transition: color 0.3s, opacity 0.3s, text-shadow 0.3s;
-}
-
-#gesture-guide .gkey {
-  color: rgba(255, 255, 255, 0.55);
-  font-weight: 600;
-  margin-right: 0.35em;
-}
-
-#gesture-guide li.gesture-active {
-  color: rgba(255, 255, 255, 0.95);
-  opacity: 1;
-  text-shadow: 0 0 12px rgba(255, 255, 255, 0.35), 0 0 30px rgba(255, 255, 255, 0.1);
-  animation: active-glow 2s ease-in-out infinite;
-}
-
-@keyframes active-glow {
-  0%, 100% { color: rgba(255, 255, 255, 0.95); }
-  50%      { color: rgba(200, 200, 210, 0.7); }
-}
-
-#gesture-guide li.gesture-active .gkey {
-  color: rgba(255, 255, 255, 1);
-}
-
 /* ── Hand Tracking Overlay ── */
 #tracking-canvas {
   position: absolute;
@@ -370,66 +291,3 @@ body {
   100% { opacity: 0; }
 }
 
-/* ── Studio top strip: quote + ceramic fact (always visible) ── */
-#studio-top-strip {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  z-index: 50;
-  padding: 0.65rem 1.25rem 0.55rem;
-  padding-top: calc(0.65rem + env(safe-area-inset-top, 0px));
-  background: linear-gradient(180deg, rgba(0, 0, 0, 0.92) 0%, rgba(0, 0, 0, 0.45) 85%, transparent 100%);
-  pointer-events: none;
-  text-align: center;
-}
-
-#studio-quote-block {
-  margin: 0 auto;
-  max-width: 42rem;
-  border: none;
-  padding: 0;
-}
-
-#top-quote-text {
-  font-size: 0.98rem;
-  font-style: italic;
-  line-height: 1.35;
-  color: rgba(248, 244, 238, 0.92);
-  margin: 0 0 0.2rem;
-}
-
-#studio-quote-block footer {
-  margin: 0;
-}
-
-#top-quote-author {
-  font-size: 0.72rem;
-  font-style: normal;
-  font-family: 'JetBrains Mono', monospace;
-  letter-spacing: 0.04em;
-  color: rgba(255, 255, 255, 0.45);
-}
-
-.top-fact-line {
-  margin: 0.45rem auto 0;
-  max-width: 44rem;
-  font-size: 0.78rem;
-  line-height: 1.35;
-  color: rgba(220, 212, 200, 0.72);
-}
-
-.top-fact-source-line {
-  margin: 0.2rem auto 0;
-  max-width: 44rem;
-  font-size: 0.65rem;
-  font-family: 'JetBrains Mono', monospace;
-  opacity: 0.5;
-  line-height: 1.35;
-}
-
-.top-fact-source-line a {
-  color: #8ec8e0;
-  text-decoration: underline;
-  pointer-events: auto;
-}

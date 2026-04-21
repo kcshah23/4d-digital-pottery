@@ -21,6 +21,32 @@ function sanitizeName(name) {
 }
 
 /**
+ * Retry a Supabase call a few times for transient network failures
+ * ("TypeError: Failed to fetch", which supabase-js surfaces as `error.message`).
+ * RLS / 4xx errors are returned immediately — only network blips are retried.
+ */
+async function withNetworkRetry(fn, { attempts = 3, baseDelayMs = 600 } = {}) {
+  let lastErr = null;
+  for (let i = 0; i < attempts; i++) {
+    try {
+      const result = await fn();
+      const err = result?.error;
+      const isTransient =
+        err && /failed to fetch|networkerror|load failed/i.test(err.message || '');
+      if (!isTransient) return result;
+      lastErr = err;
+    } catch (e) {
+      if (!/failed to fetch|networkerror|load failed/i.test(e?.message || '')) throw e;
+      lastErr = e;
+    }
+    if (i < attempts - 1) {
+      await new Promise((r) => setTimeout(r, baseDelayMs * Math.pow(2, i)));
+    }
+  }
+  return { data: null, error: lastErr };
+}
+
+/**
  * Upload postcard PNG to the `postcard-images` storage bucket.
  *
  * @param {string} dataUrl  – base64 data-URL (canvas capture)
@@ -32,11 +58,21 @@ export async function uploadPostcardImage(dataUrl, name) {
   const blob = dataUrlToBlob(dataUrl);
   const path = `${sanitizeName(name)}_${Date.now()}.png`;
 
-  const { error: uploadErr } = await sb.storage
-    .from(BUCKET)
-    .upload(path, blob, { contentType: 'image/png', upsert: false });
+  const { error: uploadErr } = await withNetworkRetry(() =>
+    sb.storage
+      .from(BUCKET)
+      .upload(path, blob, { contentType: 'image/png', upsert: false })
+  );
 
-  if (uploadErr) throw new Error(`Image upload failed: ${uploadErr.message}`);
+  if (uploadErr) {
+    const msg = uploadErr.message || String(uploadErr);
+    if (/failed to fetch|networkerror|load failed/i.test(msg)) {
+      throw new Error(
+        "Couldn't upload postcard image (network). Check internet / ad-blocker on supabase.co, then click Save again."
+      );
+    }
+    throw new Error(`Image upload failed: ${msg}`);
+  }
 
   const { data: urlData } = sb.storage.from(BUCKET).getPublicUrl(path);
   return urlData.publicUrl;
@@ -55,13 +91,23 @@ export async function uploadPostcardImage(dataUrl, name) {
 export async function saveToGallery({ user_name, user_email, postcard_image_url, clay_model_data }) {
   const sb = getSupabaseClient();
 
-  const { data, error } = await sb
-    .from(TABLE)
-    .insert([{ user_name, user_email, postcard_image_url, clay_model_data }])
-    .select()
-    .single();
+  const { data, error } = await withNetworkRetry(() =>
+    sb
+      .from(TABLE)
+      .insert([{ user_name, user_email, postcard_image_url, clay_model_data }])
+      .select()
+      .single()
+  );
 
-  if (error) throw new Error(`Gallery save failed: ${error.message}`);
+  if (error) {
+    const msg = error.message || String(error);
+    if (/failed to fetch|networkerror|load failed/i.test(msg)) {
+      throw new Error(
+        "Couldn't reach the gallery database. Check internet / ad-blocker on supabase.co, then click Save again."
+      );
+    }
+    throw new Error(`Gallery save failed: ${msg}`);
+  }
   return data;
 }
 

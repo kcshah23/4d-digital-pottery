@@ -262,9 +262,28 @@ static int callback_websocket(struct lws *wsi,
 
 
 
+/*
+ * libwebsockets 4.5+ may install built-in protocols before ours; clients that
+ * omit Sec-WebSocket-Protocol (LeapJS) must bind via a "default" pvo tag.
+ * See: https://github.com/warmcat/libwebsockets/issues/3375#issuecomment-2836252694
+ */
+static struct lws_protocol_vhost_options pvo_default = {
+    NULL,
+    NULL,
+    "default",
+    ""
+};
+
+static struct lws_protocol_vhost_options pvo = {
+    NULL,
+    &pvo_default,
+    "leap-ws",
+    ""
+};
+
 static struct lws_protocols protocols[] = {
     {
-        NULL,
+        "leap-ws",
         callback_websocket,
         1 * sizeof(int)
     },
@@ -287,6 +306,16 @@ int main(void) {
                 LeapSetAllocator(connectionHandle, &allocator);
             }
 
+            /* Default for this WebSocket bridge: Screen Top (sensor above display). */
+            {
+                eLeapRS tm = LeapSetTrackingMode(connectionHandle, eLeapTrackingMode_ScreenTop);
+                if (tm != eLeapRS_Success) {
+                    printf("LeapSetTrackingMode(ScreenTop): %s\n", ultraleapResultToCharArray(tm));
+                } else {
+                    printf("Tracking mode set to Screen Top\n");
+                }
+            }
+
             // Create the message poll thread and the data mutex
             pthread_mutex_init(&ultraleap_lock, NULL);
             pthread_create(&ultraleap_thread, NULL, serviceMessageLoop, NULL);
@@ -302,11 +331,22 @@ int main(void) {
     // server url will be http://localhost:6437
     int port = 6437;
     struct lws_context *context;
-    struct lws_context_creation_info context_info =
-    {
-        .port = port, .iface = NULL, .protocols = protocols, .extensions = NULL,
-        .ssl_cert_filepath = NULL, .ssl_private_key_filepath = NULL, .ssl_ca_filepath = NULL,
-        .gid = -1, .uid = -1, .options = 0, NULL, .ka_time = 0, .ka_probes = 0, .ka_interval = 0
+    struct lws_context_creation_info context_info = {
+        .port = port,
+        .iface = NULL,
+        .protocols = protocols,
+        .extensions = NULL,
+        .pvo = &pvo,
+        .ssl_cert_filepath = NULL,
+        .ssl_private_key_filepath = NULL,
+        .ssl_ca_filepath = NULL,
+        .gid = -1,
+        .uid = -1,
+        .options = 0,
+        .user = NULL,
+        .ka_time = 0,
+        .ka_probes = 0,
+        .ka_interval = 0,
     };
     // create lws context representing this server
     context = lws_create_context(&context_info);

@@ -1,14 +1,12 @@
 /**
- * 4D Digital Pottery — Particle Cloud with Advanced Gestures
+ * 4D Digital Pottery — wheel clay with material-style forces
  *
- * Gesture map:
- *   [Pinch]      Index tip carves inward (removes clay)
- *   [Two Hands]  Palm distance scales cylinder radius; Y velocity adjusts height
- *   [Flat Palm]  Laplacian smoothing evens the surface
- *   [Fist]       Hold to finish / photo
- *   [R]          Reset sculpt toward smooth cylinder
+ *   [Pinch]      Pressure-scaled radial edits (depth → height on pot); volume → height boost
+ *   [Flat Palm]  Stabilizes + smooths profile; friction ripple when still vs spin
+ *   [Two Hands]  Overall width & height
+ *   [Fist]       Finish / photo   [R]  Reset clay
  *
- * Spring-mass physics give particles elastic, clay-like weight.
+ * Centrifugal force ∝ wheel speed; pinch/palm counteract. Thin walls slump.
  */
 
 import * as THREE from 'three';
@@ -29,6 +27,7 @@ import { pickCuratorialFact, pickCuratorialFactForShape } from './gallery/potter
 import { computePotShapeHint } from './gallery/potShapeProfile.js';
 import { pickPotQuote } from './gallery/potQuotes.js';
 import { uploadPostcardImage, saveToGallery } from './supabase/galleryService.js';
+import { notifyGalleryListUpdated, GALLERY_WINDOW_NAME } from './gallerySyncChannel.js';
 
 // ── Config ──────────────────────────────────────────────────────
 
@@ -38,16 +37,15 @@ const LEAP_CONFIG = { scale: 0.002, offsetY: -0.15, offsetZ: 0 };
 const CLAY_POT_HEIGHT = 0.5;
 
 /**
- * Leap hands sit in a narrow band of local Y; clay spans ±(CLAY_POT_HEIGHT/2)*heightScale.
- * Map finger height so vertical motion can target bottom → top of the pot.
+ * Depth from Leap (scene Z) → height along pot. Farther from sensor → rim; closer → foot.
  */
-function mapFingerYToClayColumn(localY, heightScale) {
+function mapHandDepthToClayColumn(sensorZ, heightScale) {
   const half = 0.5 * CLAY_POT_HEIGHT * heightScale;
   const yBottom = -half;
   const yTop = half;
-  const handLo = -0.12;
-  const handHi = 0.22;
-  const t = (localY - handLo) / (handHi - handLo);
+  const zNearBottom = 0.11;
+  const zFarTop = -0.36;
+  const t = (sensorZ - zNearBottom) / (zFarTop - zNearBottom);
   const u = t <= 0 ? 0 : t >= 1 ? 1 : t;
   return yBottom + u * (yTop - yBottom);
 }
@@ -86,18 +84,76 @@ const GLOW_PALETTE = [
 ];
 let colorIndex = Math.floor(Math.random() * GLOW_PALETTE.length);
 
+/** Current on-screen color (particles + tracking). Updated each tween frame. */
+let currentColorRGB = hexToRgb(GLOW_PALETTE[colorIndex]);
+/** Active tween state; null means no tween running. */
+let colorTween = null;
+/** Duration for a single palette hop (s). Longer = more gradual. */
+const COLOR_TWEEN_SEC = 1.2;
+
+function hexToRgb(hex) {
+  return {
+    r: (hex >> 16) & 0xff,
+    g: (hex >> 8) & 0xff,
+    b: hex & 0xff,
+  };
+}
+
+function rgbToHex({ r, g, b }) {
+  return ((r & 0xff) << 16) | ((g & 0xff) << 8) | (b & 0xff);
+}
+
+function easeInOutCubic(t) {
+  return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+}
+
+/** Called every animation frame; advances an active color tween and pushes it to the scene. */
+function tickColorTween(dt) {
+  if (!colorTween) return;
+  colorTween.elapsed += dt;
+  const raw = Math.min(1, colorTween.elapsed / colorTween.duration);
+  const t = easeInOutCubic(raw);
+  const { from, to } = colorTween;
+  currentColorRGB = {
+    r: Math.round(from.r + (to.r - from.r) * t),
+    g: Math.round(from.g + (to.g - from.g) * t),
+    b: Math.round(from.b + (to.b - from.b) * t),
+  };
+  const hex = rgbToHex(currentColorRGB);
+  particleSys.setColor(hex);
+  setTrackingColor(hex);
+  if (raw >= 1) colorTween = null;
+}
+
+/**
+ * Smoothly cross-fade particles + hand tracking to the next palette color.
+ * Interruptible: calling again mid-tween smoothly redirects from the current color.
+ */
 function applyNextColor() {
+  const targetHex = GLOW_PALETTE[colorIndex];
+  colorTween = {
+    from: { ...currentColorRGB },
+    to: hexToRgb(targetHex),
+    elapsed: 0,
+    duration: COLOR_TWEEN_SEC,
+  };
+  colorIndex = (colorIndex + 1) % GLOW_PALETTE.length;
+}
+
+/** Snap color instantly (used once at boot so we don't start mid-fade from black). */
+function initColorImmediate() {
   const hex = GLOW_PALETTE[colorIndex];
+  currentColorRGB = hexToRgb(hex);
   particleSys.setColor(hex);
   setTrackingColor(hex);
   colorIndex = (colorIndex + 1) % GLOW_PALETTE.length;
+  colorTween = null;
 }
 
 // ── DOM ─────────────────────────────────────────────────────────
 
 let canvas;
 const leapStatus    = document.getElementById('leap-status');
-const instructions  = document.getElementById('instructions');
 
 // Save overlay
 const saveOverlay   = document.getElementById('save-overlay');
@@ -108,18 +164,6 @@ const saveActions   = document.getElementById('save-actions');
 const btnNewPot     = document.getElementById('btn-new-pot');
 const btnViewGallery = document.getElementById('btn-view-gallery');
 
-
-// Gesture guide indicators (remapped)
-const gFist   = document.getElementById('g-fist');
-const gSmooth = document.getElementById('g-smooth');
-const gPinch  = document.getElementById('g-pinch');
-const gWidth  = document.getElementById('g-width');
-
-// Top strip: quote + curatorial fact (same objects saved to gallery)
-const topQuoteText   = document.getElementById('top-quote-text');
-const topQuoteAuthor = document.getElementById('top-quote-author');
-const topFactText    = document.getElementById('top-fact-text');
-const topFactSource  = document.getElementById('top-fact-source');
 
 // Countdown + flash
 const countdownOverlay = document.getElementById('countdown-overlay');
@@ -135,6 +179,8 @@ let lastAllTips     = [];
 let palmVelocityMag = 0;
 let lastDisplacementMag = 0;
 let leapConnected   = false;
+/** WebSocket to Leap bridge is up (distinct from `leapConnected`, which requires visible hands). */
+let leapSocketConnected = false;
 let lastTime = 0;
 let isFinishing = false;
 let lastMaxPinch = 0;
@@ -150,6 +196,9 @@ let memorizedRadius = 1.0;
 const WIDTH_HOLD = 2.0;
 const WIDTH_FADE = 1.0;
 
+/** After gallery save, morph clay back to default cylinder (seconds). */
+const POST_SAVE_CYLINDER_TRANSITION_SEC = 4;
+
 /** Curatorial fact + pot quote for this session; chosen at session start (same as gallery save). */
 let sessionCuratorialFact = null;
 let sessionPotQuote = null;
@@ -158,9 +207,19 @@ let pendingCylinderReset = false;
 // Fist-hold photo trigger (requires 1s hold to avoid accidental triggers)
 let fistHoldTime = 0;
 const FIST_HOLD_REQUIRED = 1.0;
+/**
+ * After a photo/save flow, require the hand to open back up (non-fist) before we
+ * accept another fist-hold trigger; prevents an auto-refire when the user's hand
+ * is still curled while returning to sculpting.
+ */
+let fistArmed = true;
+const FIST_REARM_GRAB_BELOW = 0.3;
 
 // Raw LeapJS hands for tracking visualizer
 let rawFrameHands = [];
+
+/** Set in animate() from wheel rotation speed (passed into particle physics). */
+let lastWheelSpeed = 0.008;
 
 // ── Three.js + Bloom ────────────────────────────────────────────
 
@@ -191,6 +250,93 @@ function initThree() {
 // ── Leap Motion ─────────────────────────────────────────────────
 
 let leapController = null;
+let leapReconnectTimer = null;
+let leapWatchdogTimer = null;
+let leapStartupTimeoutId = null;
+let leapReconnectAttempt = 0;
+
+function clearLeapReconnectTimers() {
+  if (leapReconnectTimer) {
+    clearTimeout(leapReconnectTimer);
+    leapReconnectTimer = null;
+  }
+  if (leapWatchdogTimer) {
+    clearTimeout(leapWatchdogTimer);
+    leapWatchdogTimer = null;
+  }
+}
+
+/** Disconnect then reconnect WebSocket (same path as manual Retry). */
+function pulseLeapReconnect() {
+  if (!leapController) return;
+  leapStatus.textContent = 'Leap Motion: Reconnecting…';
+  leapStatus.className = 'status-connecting';
+  try {
+    leapController.disconnect();
+  } catch (_) { /* noop */ }
+  setTimeout(() => {
+    try {
+      leapController.connect();
+    } catch (_) { /* noop */ }
+  }, 500);
+}
+
+function scheduleNextLeapReconnect() {
+  if (!leapController) return;
+  clearLeapReconnectTimers();
+  const wait = Math.min(450 + leapReconnectAttempt * 550, 15000);
+  leapReconnectTimer = setTimeout(() => {
+    leapReconnectTimer = null;
+    leapStatus.textContent =
+      leapReconnectAttempt === 0
+        ? 'Leap Motion: Disconnected — reconnecting…'
+        : 'Leap Motion: Reconnecting…';
+    leapStatus.className = 'status-connecting';
+    try {
+      leapController.disconnect();
+    } catch (_) { /* noop */ }
+    setTimeout(() => {
+      try {
+        leapController.connect();
+      } catch (_) { /* noop */ }
+      leapReconnectAttempt++;
+      leapWatchdogTimer = setTimeout(() => {
+        leapWatchdogTimer = null;
+        if (!leapSocketConnected && leapController) {
+          scheduleNextLeapReconnect();
+        }
+      }, 10000);
+    }, 500);
+  }, wait);
+}
+
+function wireLeapRetryLink() {
+  if (leapSocketConnected) return;
+  leapStatus.innerHTML =
+    'Leap: No connection on <code>127.0.0.1:6437</code>. Start the bridge: <code>npm run dev</code> ' +
+    '(not <code>dev:vite</code> alone). If the bridge is built: <code>npm run setup-leap-bridge</code>. ' +
+    '<a href="#" id="leap-retry" style="color:#7eb;">Retry</a>';
+  leapStatus.className = 'status-error';
+}
+
+function onLeapRetryClick(e) {
+  const a = e.target?.closest?.('a#leap-retry');
+  if (!a) return;
+  e.preventDefault();
+  leapReconnectAttempt = 0;
+  clearLeapReconnectTimers();
+  leapStatus.textContent = 'Retrying…';
+  leapStatus.className = 'status-connecting';
+  pulseLeapReconnect();
+  setTimeout(() => {
+    if (!leapSocketConnected) {
+      leapStatus.textContent =
+        'Still no connection — open the terminal: you should see [leap-bridge] Starting. ' +
+        'Otherwise run npm run setup-leap-bridge, then npm run dev.';
+      leapStatus.className = 'status-error';
+    }
+  }, 12000);
+}
 
 function initLeap() {
   const Leap = typeof window !== 'undefined' ? window.Leap : null;
@@ -199,6 +345,8 @@ function initLeap() {
     leapStatus.className = 'status-error';
     return;
   }
+
+  leapStatus.addEventListener('click', onLeapRetryClick);
 
   leapController = Leap.loop(
     { host: '127.0.0.1', port: 6437, enableGestures: false },
@@ -215,9 +363,6 @@ function initLeap() {
         leapConnected = true;
         leapStatus.textContent = 'Leap Motion: Tracking';
         leapStatus.className = 'status-connected';
-        instructions.textContent =
-          'Pinch to carve (move hand up/down for the full height). Two hands: width & height. ' +
-          'Flat palm smooths. <kbd>R</kbd> resets. <kbd>F</kbd> or fist hold to finish.';
       }
 
       const hands = [];
@@ -241,77 +386,59 @@ function initLeap() {
   );
 
   leapController.on('connect', () => {
+    leapSocketConnected = true;
+    leapReconnectAttempt = 0;
+    clearLeapReconnectTimers();
+    if (leapStartupTimeoutId) {
+      clearTimeout(leapStartupTimeoutId);
+      leapStartupTimeoutId = null;
+    }
     leapStatus.textContent = 'Leap Motion: Connected — move your hands';
     leapStatus.className = 'status-waiting';
   });
   leapController.on('disconnect', () => {
+    leapSocketConnected = false;
     leapConnected = false;
-    leapStatus.textContent = 'Leap Motion: Disconnected';
-    leapStatus.className = 'status-error';
+    lastHandData = [];
+    lastAllTips = [];
+    rawFrameHands = [];
+    palmVelocityMag *= 0.92;
+    clearLeapReconnectTimers();
+    scheduleNextLeapReconnect();
   });
 
   leapStatus.textContent = 'Leap Motion: Connecting…';
   leapStatus.className = 'status-connecting';
 
-  setTimeout(() => {
-    if (!leapConnected && leapStatus.textContent.includes('Connecting')) {
-      leapStatus.innerHTML =
-        'Leap: No connection on 6437. Ensure bridge is running. ' +
-        '<a href="#" id="leap-retry" style="color:#7eb;">Retry</a>';
-      leapStatus.className = 'status-error';
-      document.getElementById('leap-retry')?.addEventListener('click', (e) => {
-        e.preventDefault();
-        leapStatus.textContent = 'Retrying…';
-        leapStatus.className = 'status-connecting';
-        leapController.disconnect();
-        setTimeout(() => leapController.connect(), 500);
-      });
+  /* Always show help if the WebSocket never opened — even when disconnect/reconnect already ran (otherwise the UI stayed stuck without the Retry link). */
+  leapStartupTimeoutId = setTimeout(() => {
+    leapStartupTimeoutId = null;
+    if (!leapSocketConnected) {
+      wireLeapRetryLink();
     }
-  }, 5000);
+  }, 6000);
+
+  window.addEventListener('online', () => {
+    if (leapController && !leapSocketConnected) {
+      leapReconnectAttempt = 0;
+      clearLeapReconnectTimers();
+      pulseLeapReconnect();
+    }
+  });
 }
 
 // ── Gesture Processing ──────────────────────────────────────────
 
-function fillTopFactSourceLine(entry) {
-  if (!topFactSource || !entry) return;
-  topFactSource.textContent = '';
-  const src = typeof entry.source === 'string' ? entry.source.trim() : '';
-  if (!src) return;
-  topFactSource.append('Source: ');
-  const url = typeof entry.url === 'string' ? entry.url.trim() : '';
-  if (url) {
-    const a = document.createElement('a');
-    a.href = url;
-    a.target = '_blank';
-    a.rel = 'noopener noreferrer';
-    a.textContent = src;
-    topFactSource.append(a);
-  } else {
-    topFactSource.append(src);
-  }
-}
-
-function initStudioTopStrip() {
+/** Pick fact + quote for gallery save (no studio UI). */
+function initStudioSessionMeta() {
   sessionCuratorialFact = pickCuratorialFact();
   sessionPotQuote = pickPotQuote();
-  if (topQuoteText && sessionPotQuote) {
-    topQuoteText.textContent = `“${sessionPotQuote.text}”`;
-  }
-  if (topQuoteAuthor && sessionPotQuote) {
-    topQuoteAuthor.textContent = sessionPotQuote.author ? `— ${sessionPotQuote.author}` : '';
-  }
-  if (topFactText) topFactText.textContent = sessionCuratorialFact.fact;
-  fillTopFactSourceLine(sessionCuratorialFact);
 }
 
 function processGestures(dt) {
   const now = performance.now() * 0.001;
 
   if (isFinishing) {
-    gFist?.classList.remove('gesture-active');
-    gSmooth?.classList.remove('gesture-active');
-    gPinch?.classList.remove('gesture-active');
-    gWidth?.classList.remove('gesture-active');
     fistHoldTime = 0;
     return {
       sculptingEnabled: true,
@@ -321,6 +448,9 @@ function processGestures(dt) {
       resetSculpt: false,
       radiusScale: 1.0,
       heightScale: heightTarget,
+      wheelSpeed: 0,
+      stabilizing: false,
+      palmStationary: false,
     };
   }
 
@@ -342,7 +472,6 @@ function processGestures(dt) {
 
   let fistDetected = false;
   let radiusScale = 1.0;
-  let isWidthGesture = false;
 
   for (const hd of lastHandData) {
     if (!hd.palm) continue;
@@ -356,27 +485,39 @@ function processGestures(dt) {
       continue;
     }
 
-    // Pinch → carve at index tip
+    // Pinch → pressure-sculpt (depth maps vertical ring; pinch strength = rate)
     if (
       sculptingEnabled &&
       hd.pinchStrength > PINCH_CARVE_MIN &&
       hd.indexTip
     ) {
+      const clayY = mapHandDepthToClayColumn(hd.indexTip.z, heightTarget);
       const v = new THREE.Vector3(hd.indexTip.x, hd.indexTip.y, hd.indexTip.z);
       pts.worldToLocal(v);
-      const clayY = mapFingerYToClayColumn(v.y, heightTarget);
-      wallPullers.push({ tip: { x: v.x, y: clayY, z: v.z } });
+      const pinch01 = Math.max(0, Math.min(1, hd.pinchStrength || 0));
+      wallPullers.push({ tip: { x: v.x, y: clayY, z: v.z }, pinch01 });
       continue;
     }
 
-    // Flat palm → smooth (low grab + low pinch)
+    // Flat palm → smooth profile near depth-mapped height
     if (sculptingEnabled && hd.grabStrength < 0.2 && hd.pinchStrength < 0.3) {
-      smoothPalms.push({ palm: { x: palmLocal.x, y: palmLocal.y, z: palmLocal.z } });
+      const clayY = mapHandDepthToClayColumn(hd.palm.z, heightTarget);
+      smoothPalms.push({
+        palm: { x: palmLocal.x, y: palmLocal.y, z: palmLocal.z },
+        clayY,
+      });
     }
   }
 
-  // Fist hold timer → trigger photo after 1s
-  if (fistDetected) {
+  // Fist hold timer → trigger photo after 1s (requires re-open after previous finish)
+  if (!fistArmed) {
+    const allOpen =
+      lastHandData.length === 0 ||
+      lastHandData.every((h) => (h.grabStrength ?? 0) < FIST_REARM_GRAB_BELOW);
+    if (allOpen) fistArmed = true;
+  }
+
+  if (fistDetected && fistArmed) {
     fistHoldTime += dt;
     if (fistHoldTime >= FIST_HOLD_REQUIRED) {
       triggerFinish();
@@ -397,7 +538,6 @@ function processGestures(dt) {
       radiusScale = Math.max(0.35, Math.min(2.2, palmDist / BASELINE_PALM_DIST));
       memorizedRadius = radiusScale;
       twoHandsActive = true;
-      isWidthGesture = true;
     }
 
     // Height: average Y velocity of both hands
@@ -431,11 +571,8 @@ function processGestures(dt) {
     }
   }
 
-  // Update gesture guide highlights
-  gFist?.classList.toggle('gesture-active', fistDetected && fistHoldTime > 0.3);
-  gSmooth?.classList.toggle('gesture-active', sculptingEnabled && smoothPalms.length > 0);
-  gPinch?.classList.toggle('gesture-active', sculptingEnabled && wallPullers.length > 0);
-  gWidth?.classList.toggle('gesture-active', isWidthGesture);
+  const stabilizing = wallPullers.length > 0 || smoothPalms.length > 0;
+  const palmStationary = hasHands && palmVelocityMag < 95;
 
   return {
     sculptingEnabled,
@@ -445,6 +582,9 @@ function processGestures(dt) {
     resetSculpt,
     radiusScale,
     heightScale: heightTarget,
+    wheelSpeed: lastWheelSpeed,
+    stabilizing,
+    palmStationary,
   };
 }
 
@@ -457,6 +597,7 @@ function wait(ms) { return new Promise(r => setTimeout(r, ms)); }
 async function triggerFinish() {
   if (isFinishing) return;
   isFinishing = true;
+  fistArmed = false;
 
   particleSys.freeze();
 
@@ -528,9 +669,20 @@ async function handleSave(e) {
       },
     });
 
-    saveStatus.textContent = 'Saved! Opening gallery…';
-    await wait(800);
-    window.location.href = '/gallery.html';
+    notifyGalleryListUpdated();
+
+    saveStatus.textContent =
+      'Saved! Gallery will update if open elsewhere. Easing to a fresh cylinder…';
+    await wait(1100);
+
+    returnToSculpting({ morph: true });
+
+    window.setTimeout(() => {
+      sessionCuratorialFact = null;
+      sessionPotQuote = null;
+      initStudioSessionMeta();
+      applyNextColor();
+    }, POST_SAVE_CYLINDER_TRANSITION_SEC * 1000);
   } catch (err) {
     const msg = err instanceof Error ? err.message : (err?.text || JSON.stringify(err));
     saveStatus.textContent = 'Failed: ' + msg;
@@ -538,16 +690,48 @@ async function handleSave(e) {
   }
 }
 
-function resetForNewPot() {
+/**
+ * Clear all transient gesture/save state so the next pot starts clean.
+ * `morph: true` eases the current shape back to the default cylinder;
+ * `morph: false` (Make Another button) does an instant hard reset.
+ */
+function returnToSculpting({ morph }) {
   saveOverlay.classList.add('hidden');
   particleSys.unfreeze();
   isFinishing = false;
   capturedClayDataUrl = null;
   document.getElementById('potter-name').value = '';
   document.getElementById('save-btn').disabled = false;
+
+  heightTarget = 1.0;
+  memorizedRadius = 1.0;
+  twoHandsActive = false;
+  twoHandsLostTime = 0;
+
+  lastHandData = [];
+  lastAllTips = [];
+  rawFrameHands = [];
+  palmVelocityMag = 0;
+  lastDisplacementMag = 0;
+  lastMaxPinch = 0;
+  pinchCooldown = 0;
+  fistHoldTime = 0;
+  fistArmed = false;
+
+  if (morph) {
+    pendingCylinderReset = false;
+    particleSys.beginPostSaveCylinderMorph(POST_SAVE_CYLINDER_TRANSITION_SEC);
+  } else {
+    particleSys.cancelPostSaveCylinderMorph();
+    pendingCylinderReset = true;
+  }
+}
+
+function resetForNewPot() {
+  returnToSculpting({ morph: false });
   sessionCuratorialFact = null;
   sessionPotQuote = null;
-  initStudioTopStrip();
+  initStudioSessionMeta();
   applyNextColor();
 }
 
@@ -560,12 +744,14 @@ function animate(time = 0) {
 
   // Pottery wheel rotation (respects dissolving damping + freeze)
   const rotSpeed = 0.008 * particleSys.getRotationDamping();
+  lastWheelSpeed = rotSpeed;
   if (!particleSys.isFrozen()) {
     particleSys.points.rotation.y += rotSpeed;
   }
 
   const gesture = processGestures(dt);
   particleSys.update(gesture, dt);
+  tickColorTween(dt);
 
   // Audio: contact buzz (triangle osc modulated by palm distance from center)
   const palmDist = lastHandData.length > 0 && lastHandData[0].palm
@@ -617,16 +803,21 @@ function boot() {
     const tag = e.target && e.target.tagName;
     if (tag === 'INPUT' || tag === 'TEXTAREA') return;
     if (e.key === 'f' || e.key === 'F') triggerFinish();
-    if (e.key === 'r' || e.key === 'R') pendingCylinderReset = true;
+    if (e.key === 'r' || e.key === 'R') {
+      particleSys.cancelPostSaveCylinderMorph();
+      pendingCylinderReset = true;
+    }
   });
 
   saveForm?.addEventListener('submit', handleSave);
   btnNewPot?.addEventListener('click', resetForNewPot);
-  btnViewGallery?.addEventListener('click', () => { window.location.href = '/gallery.html'; });
+  btnViewGallery?.addEventListener('click', () => {
+    window.open(`/gallery.html`, GALLERY_WINDOW_NAME, 'noopener,noreferrer');
+  });
 
   initTrackingView(camera);
-  initStudioTopStrip();
-  applyNextColor();
+  initStudioSessionMeta();
+  initColorImmediate();
   animate();
   initLeap();
 }

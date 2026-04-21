@@ -25,33 +25,9 @@ html, body {
 /* ── Header ── */
 #gallery-header {
   display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  margin-bottom: 2.5rem;
-  flex-wrap: wrap;
-  gap: 1rem;
-}
-
-#gallery-title h1 {
-  font-size: 2rem;
-  font-weight: 600;
-  letter-spacing: 0.03em;
-  margin-bottom: 0.3rem;
-}
-
-#gallery-title p {
-  font-size: 0.95rem;
-  opacity: 0.45;
-  font-style: italic;
-}
-
-.gallery-intro {
-  font-size: 0.82rem !important;
-  line-height: 1.45;
-  font-style: normal !important;
-  opacity: 0.38 !important;
-  margin-top: 0.55rem;
-  max-width: 34rem;
+  justify-content: flex-end;
+  align-items: center;
+  margin-bottom: 1.75rem;
 }
 
 #back-to-sculpt {
@@ -112,6 +88,90 @@ html, body {
   aspect-ratio: 1;
   object-fit: cover;
   display: block;
+  position: relative;
+  z-index: 0;
+}
+
+/* Fact + source above the framed pot image */
+.gallery-card-fact-above {
+  padding: 0 0.15rem 0.15rem;
+  margin: 0;
+}
+
+.gallery-card-fact-above .gallery-card-fact {
+  font-size: 0.78rem;
+  line-height: 1.45;
+  color: rgba(232, 228, 223, 0.85);
+  padding: 0;
+  margin: 0 0 0.3rem;
+  text-align: left;
+  hyphens: auto;
+  overflow-wrap: break-word;
+}
+
+.gallery-card-fact-above .gallery-card-source {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.58rem;
+  letter-spacing: 0.02em;
+  line-height: 1.45;
+  color: rgba(255, 255, 255, 0.32);
+  margin: 0;
+  padding: 0;
+  word-break: break-word;
+}
+
+.gallery-card-fact-above .gallery-card-source a {
+  color: rgba(160, 195, 255, 0.72);
+  text-decoration: none;
+  border-bottom: 1px solid rgba(160, 195, 255, 0.2);
+}
+
+.gallery-card-fact-above .gallery-card-source a:hover {
+  color: rgba(190, 215, 255, 0.92);
+  border-bottom-color: rgba(190, 215, 255, 0.45);
+}
+
+/* Quote only — overlaid on upper portion of the pot image */
+.gallery-card-quote-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 1;
+  padding: 0.65rem 0.7rem 1.1rem;
+  background: linear-gradient(
+    180deg,
+    rgba(0, 0, 0, 0.82) 0%,
+    rgba(0, 0, 0, 0.4) 55%,
+    transparent 100%
+  );
+  pointer-events: none;
+}
+
+.gallery-card-quote-overlay .gallery-card-quote--overlay {
+  margin: 0;
+  padding: 0;
+  border: none;
+  font-size: 0.76rem;
+  line-height: 1.4;
+  color: rgba(248, 244, 238, 0.93);
+  font-style: italic;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.85);
+}
+
+.gallery-card-quote-overlay .gallery-card-quote--overlay p {
+  margin: 0 0 0.28rem;
+}
+
+.gallery-card-quote-overlay .gallery-card-quote--overlay cite {
+  display: block;
+  font-style: normal;
+  font-size: 0.6rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  font-family: 'JetBrains Mono', monospace;
+  color: rgba(255, 255, 255, 0.52);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.9);
 }
 
 .gallery-info {
@@ -130,63 +190,6 @@ html, body {
   font-family: 'JetBrains Mono', monospace;
   font-size: 0.65rem;
   opacity: 0.35;
-}
-
-.gallery-card-fact {
-  font-size: 0.8rem;
-  line-height: 1.45;
-  color: rgba(232, 228, 223, 0.82);
-  padding: 0.35rem 0.15rem 0;
-  margin: 0;
-  text-align: left;
-  hyphens: auto;
-  overflow-wrap: break-word;
-}
-
-.gallery-card-source {
-  font-family: 'JetBrains Mono', monospace;
-  font-size: 0.58rem;
-  letter-spacing: 0.02em;
-  line-height: 1.45;
-  color: rgba(255, 255, 255, 0.32);
-  margin: 0 0.15rem;
-  padding-bottom: 0.15rem;
-  word-break: break-word;
-}
-
-.gallery-card-source a {
-  color: rgba(160, 195, 255, 0.72);
-  text-decoration: none;
-  border-bottom: 1px solid rgba(160, 195, 255, 0.2);
-}
-
-.gallery-card-source a:hover {
-  color: rgba(190, 215, 255, 0.92);
-  border-bottom-color: rgba(190, 215, 255, 0.45);
-}
-
-.gallery-card-quote {
-  margin: 0.35rem 0.1rem 0;
-  padding: 0.5rem 0.45rem 0.55rem;
-  border-left: 2px solid rgba(255, 255, 255, 0.14);
-  font-style: italic;
-  font-size: 0.82rem;
-  line-height: 1.45;
-  color: rgba(232, 228, 223, 0.72);
-}
-
-.gallery-card-quote p {
-  margin: 0 0 0.35rem;
-}
-
-.gallery-card-quote cite {
-  display: block;
-  font-style: normal;
-  font-size: 0.72rem;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  font-family: 'JetBrains Mono', monospace;
-  color: rgba(255, 255, 255, 0.35);
 }
 
 /* ── States ── */
