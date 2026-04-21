@@ -642,13 +642,11 @@ async function handleSave(e) {
 
   const btn = document.getElementById('save-btn');
   btn.disabled = true;
-  saveStatus.textContent = 'Saving…';
+  saveStatus.textContent = '';
 
   try {
-    saveStatus.textContent = 'Uploading image…';
     const publicUrl = await uploadPostcardImage(capturedClayDataUrl, name);
 
-    saveStatus.textContent = 'Saving to gallery…';
     const positions = particleSys.getParticlePositions();
     const pot_shape_hint = computePotShapeHint(positions);
     const curatorial_fact = sessionCuratorialFact
@@ -671,8 +669,7 @@ async function handleSave(e) {
 
     notifyGalleryListUpdated();
 
-    saveStatus.textContent =
-      'Saved! Gallery will update if open elsewhere. Easing to a fresh cylinder…';
+    saveStatus.textContent = 'Saved';
     await wait(1100);
 
     returnToSculpting({ morph: true });

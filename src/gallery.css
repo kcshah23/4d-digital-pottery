@@ -19,15 +19,51 @@ html, body {
 #gallery-page {
   width: 100%;
   margin: 0 auto;
-  padding: 2.5rem clamp(1.25rem, 3vw, 3rem) 4rem;
+  padding: 0 clamp(1.25rem, 3vw, 3rem) 4rem;
 }
 
-/* ── Header ── */
+/* ── Header: sticks to the top while the grid scrolls beneath ── */
 #gallery-header {
+  position: sticky;
+  top: 0;
+  z-index: 10;
   display: flex;
-  justify-content: flex-end;
+  justify-content: space-between;
   align-items: center;
-  margin-bottom: 1.75rem;
+  gap: 1.5rem;
+  margin: 0 calc(-1 * clamp(1.25rem, 3vw, 3rem)) 1.75rem;
+  padding: 1rem clamp(1.25rem, 3vw, 3rem);
+  background: rgba(0, 0, 0, 0.72);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+#gallery-title-block {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  min-width: 0;
+}
+
+#gallery-title {
+  font-family: 'Cormorant Garamond', Georgia, serif;
+  font-weight: 600;
+  font-style: italic;
+  font-size: clamp(1.3rem, 2vw, 1.9rem);
+  line-height: 1.1;
+  letter-spacing: 0.005em;
+  color: rgba(248, 244, 238, 0.95);
+  margin: 0;
+}
+
+#gallery-subtitle {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+  text-transform: lowercase;
+  color: rgba(255, 255, 255, 0.42);
+  margin: 0;
 }
 
 #back-to-sculpt {

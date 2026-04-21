@@ -103,13 +103,6 @@ body {
   text-align: center;
 }
 
-#save-card h1 {
-  font-size: 1.4rem;
-  font-weight: 600;
-  margin-bottom: 1.2rem;
-  letter-spacing: 0.03em;
-}
-
 #save-preview {
   margin-bottom: 1.4rem;
 }
@@ -128,36 +121,21 @@ body {
   gap: 0.85rem;
 }
 
-.form-group {
-  display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
-  text-align: left;
-}
-
-.form-group label {
-  font-size: 0.8rem;
-  opacity: 0.7;
-}
-
-.form-group input {
-  padding: 0.55rem 0.8rem;
+#save-form input {
+  padding: 0.6rem 0.85rem;
   background: rgba(255, 255, 255, 0.04);
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 5px;
   color: #e8e4df;
   font-family: inherit;
-  font-size: 0.9rem;
+  font-size: 0.95rem;
+  text-align: center;
   outline: none;
   transition: border-color 0.2s;
 }
 
-.form-group input:focus {
+#save-form input:focus {
   border-color: rgba(255, 255, 255, 0.25);
-}
-
-.form-group input::placeholder {
-  color: rgba(255, 255, 255, 0.2);
 }
 
 #save-btn {

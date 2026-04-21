@@ -37,22 +37,18 @@
       <!-- Save Overlay (shown after countdown + flash) -->
       <div id="save-overlay" class="hidden">
         <div id="save-card">
-          <h1>Your Creation</h1>
           <div id="save-preview">
             <img id="clay-snapshot" alt="Your Clay" />
           </div>
           <form id="save-form">
-            <div class="form-group">
-              <label for="potter-name">Your Name</label>
-              <input
-                type="text"
-                id="potter-name"
-                placeholder="Enter your name"
-                required
-              />
-            </div>
+            <input
+              type="text"
+              id="potter-name"
+              aria-label="Your name"
+              required
+            />
             <button type="submit" id="save-btn">Save to Gallery</button>
-            <p id="save-status"></p>
+            <p id="save-status" aria-live="polite"></p>
           </form>
           <div id="save-actions" class="hidden">
             <button id="btn-new-pot">Make Another</button>
