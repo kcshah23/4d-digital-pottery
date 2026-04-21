@@ -12,28 +12,7 @@ const grid    = document.getElementById('gallery-grid');
 const empty   = document.getElementById('gallery-empty');
 const loading = document.getElementById('gallery-loading');
 
-function appendSourceLine(parent, cf) {
-  const hasUrl = typeof cf.source === 'string' && typeof cf.url === 'string' && cf.url;
-  const hasSrcOnly = typeof cf.source === 'string' && cf.source.trim();
-  if (!hasUrl && !hasSrcOnly) return;
-
-  const srcEl = document.createElement('p');
-  srcEl.className = 'gallery-card-source';
-  if (hasUrl) {
-    srcEl.append('Source: ');
-    const a = document.createElement('a');
-    a.href = cf.url;
-    a.target = '_blank';
-    a.rel = 'noopener noreferrer';
-    a.textContent = cf.source;
-    srcEl.append(a);
-  } else {
-    srcEl.textContent = `Source: ${cf.source}`;
-  }
-  parent.appendChild(srcEl);
-}
-
-/** Fact + source directly above the pottery image box. */
+/** Fact directly above the pottery image box (source intentionally omitted). */
 function appendFactAboveBlock(card, cf) {
   if (!cf || typeof cf.fact !== 'string') return;
 
@@ -46,11 +25,10 @@ function appendFactAboveBlock(card, cf) {
   factEl.title = cf.fact;
   wrap.appendChild(factEl);
 
-  appendSourceLine(wrap, cf);
   card.appendChild(wrap);
 }
 
-/** Quote overlaid on the pot image. */
+/** Quote overlaid on the pot image. Author is intentionally omitted. */
 function appendQuoteOverlay(visual, pq) {
   if (!pq || typeof pq.text !== 'string') return;
 
@@ -62,14 +40,18 @@ function appendQuoteOverlay(visual, pq) {
   const p = document.createElement('p');
   p.textContent = `“${pq.text}”`;
   bq.appendChild(p);
-  if (typeof pq.author === 'string' && pq.author) {
-    const cite = document.createElement('cite');
-    cite.textContent = pq.author;
-    bq.appendChild(cite);
-  }
   overlay.appendChild(bq);
 
   visual.appendChild(overlay);
+}
+
+/** "Apr 21, 2026 · 4:09 PM" — locale-friendly date + time for the card footer. */
+function formatSavedAt(iso) {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  const date = d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+  const time = d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+  return `${date} · ${time}`;
 }
 
 /**
@@ -122,13 +104,15 @@ async function loadGallery(opts = {}) {
       const name = document.createElement('span');
       name.className = 'gallery-name';
       name.textContent = entry.user_name;
-
-      const date = document.createElement('span');
-      date.className = 'gallery-date';
-      date.textContent = new Date(entry.created_at).toLocaleDateString();
-
       info.appendChild(name);
-      info.appendChild(date);
+
+      const stamp = formatSavedAt(entry.created_at);
+      if (stamp) {
+        const when = document.createElement('span');
+        when.className = 'gallery-stamp';
+        when.textContent = stamp;
+        info.appendChild(when);
+      }
 
       card.appendChild(visual);
       card.appendChild(info);

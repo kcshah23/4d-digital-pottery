@@ -17,9 +17,9 @@ html, body {
 }
 
 #gallery-page {
-  max-width: 1200px;
+  width: 100%;
   margin: 0 auto;
-  padding: 2.5rem 2rem 4rem;
+  padding: 2.5rem clamp(1.25rem, 3vw, 3rem) 4rem;
 }
 
 /* ── Header ── */
@@ -49,11 +49,13 @@ html, body {
   border-color: rgba(255, 255, 255, 0.25);
 }
 
-/* ── Grid: align tops so row height isn’t driven by one tall card ── */
+/* ── Grid: fills the viewport; more cards per row as the window/zoom widens ── */
 #gallery-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-  gap: 1.8rem;
+  /* clamp() keeps cards at a sensible size across zoom levels:
+     ~220px min on narrow, growing up to ~300px on very wide/zoomed-out views. */
+  grid-template-columns: repeat(auto-fill, minmax(clamp(220px, 18vw, 300px), 1fr));
+  gap: clamp(1rem, 1.6vw, 2rem);
   align-items: start;
 }
 
@@ -109,28 +111,6 @@ html, body {
   overflow-wrap: break-word;
 }
 
-.gallery-card-fact-above .gallery-card-source {
-  font-family: 'JetBrains Mono', monospace;
-  font-size: 0.58rem;
-  letter-spacing: 0.02em;
-  line-height: 1.45;
-  color: rgba(255, 255, 255, 0.32);
-  margin: 0;
-  padding: 0;
-  word-break: break-word;
-}
-
-.gallery-card-fact-above .gallery-card-source a {
-  color: rgba(160, 195, 255, 0.72);
-  text-decoration: none;
-  border-bottom: 1px solid rgba(160, 195, 255, 0.2);
-}
-
-.gallery-card-fact-above .gallery-card-source a:hover {
-  color: rgba(190, 215, 255, 0.92);
-  border-bottom-color: rgba(190, 215, 255, 0.45);
-}
-
 /* Quote only — overlaid on upper portion of the pot image */
 .gallery-card-quote-overlay {
   position: absolute;
@@ -160,36 +140,30 @@ html, body {
 }
 
 .gallery-card-quote-overlay .gallery-card-quote--overlay p {
-  margin: 0 0 0.28rem;
-}
-
-.gallery-card-quote-overlay .gallery-card-quote--overlay cite {
-  display: block;
-  font-style: normal;
-  font-size: 0.6rem;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-  font-family: 'JetBrains Mono', monospace;
-  color: rgba(255, 255, 255, 0.52);
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.9);
+  margin: 0;
 }
 
 .gallery-info {
   display: flex;
   justify-content: space-between;
   align-items: baseline;
+  gap: 0.75rem;
   padding: 0.15rem 0.15rem 0;
 }
 
 .gallery-name {
-  font-size: 0.9rem;
-  opacity: 0.7;
+  font-size: 0.85rem;
+  opacity: 0.72;
+  letter-spacing: 0.01em;
 }
 
-.gallery-date {
+.gallery-stamp {
+  margin-left: auto;
   font-family: 'JetBrains Mono', monospace;
   font-size: 0.65rem;
-  opacity: 0.35;
+  opacity: 0.45;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
 }
 
 /* ── States ── */
