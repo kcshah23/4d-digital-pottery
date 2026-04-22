@@ -155,12 +155,6 @@ function initColorImmediate() {
 let canvas;
 const leapStatus    = document.getElementById('leap-status');
 
-// Save overlay
-const saveOverlay   = document.getElementById('save-overlay');
-const claySnapshot  = document.getElementById('clay-snapshot');
-const saveStatus    = document.getElementById('save-status');
-
-
 // Countdown + flash
 const countdownOverlay = document.getElementById('countdown-overlay');
 const countdownText    = document.getElementById('countdown-text');
@@ -619,9 +613,7 @@ function processGestures(dt) {
   };
 }
 
-// ── Finish → Save to Gallery ─────────────────────────────────────
-
-let capturedClayDataUrl = null;
+// ── Finish → 3 · 2 · 1 → flash → background save + smooth cylinder morph ──
 
 function wait(ms) { return new Promise(r => setTimeout(r, ms)); }
 
@@ -653,67 +645,71 @@ async function triggerFinish() {
   void flashOverlay.offsetHeight;
   flashOverlay.style.animation = '';
 
-  capturedClayDataUrl = captureClayCanvas(canvas);
+  /* Snapshot EVERYTHING the gallery needs right now, before returnToSculpting
+     kicks off the cylinder morph that will warp `profile` / `positions`. */
+  const potPayload = buildGalleryPayload(captureClayCanvas(canvas));
 
   await wait(650);
   flashOverlay.classList.add('hidden');
   countdownOverlay.classList.add('hidden');
 
-  claySnapshot.src = capturedClayDataUrl;
-  saveStatus.textContent = '';
-  saveOverlay.classList.remove('hidden');
+  returnToSculpting({ morph: true });
 
-  await autoSaveCurrentPot();
+  savePotInBackground(potPayload);
+
+  window.setTimeout(() => {
+    sessionCuratorialFact = null;
+    sessionPotQuote = null;
+    initStudioSessionMeta();
+    applyNextColor();
+  }, POST_SAVE_CYLINDER_TRANSITION_SEC * 1000);
+}
+
+/** Freeze everything the gallery row needs at photo-time (before the morph). */
+function buildGalleryPayload(snapshotDataUrl) {
+  const anonymousName = 'Anonymous';
+  const positions = particleSys.getParticlePositions();
+  const pot_shape_hint = computePotShapeHint(positions);
+  const curatorial_fact = sessionCuratorialFact
+    ? sessionCuratorialFact
+    : pickCuratorialFactForShape(pot_shape_hint, `${anonymousName}_${Date.now()}`);
+  const pot_quote = sessionPotQuote || pickPotQuote();
+  const pot_color_hex = particleSys.getColorHex();
+  return {
+    snapshotDataUrl,
+    user_name: anonymousName,
+    positions,
+    pot_shape_hint,
+    curatorial_fact,
+    pot_quote,
+    pot_color_hex,
+  };
 }
 
 /**
- * Auto-save the just-captured pot to the gallery anonymously. Shows "Saved" on
- * success (or an error message on failure) and then returns to sculpting with
- * the smooth cylinder morph. Replaces the old name-entry form.
+ * Upload + insert in the background so the sculpting screen can already be
+ * morphing back to a cylinder while the network request is in flight.
+ * Failures are logged and broadcast; the studio doesn't stall.
  */
-async function autoSaveCurrentPot() {
-  const anonymousName = 'Anonymous';
+async function savePotInBackground(payload) {
   try {
-    const publicUrl = await uploadPostcardImage(capturedClayDataUrl, anonymousName);
-
-    const positions = particleSys.getParticlePositions();
-    const pot_shape_hint = computePotShapeHint(positions);
-    const curatorial_fact = sessionCuratorialFact
-      ? sessionCuratorialFact
-      : pickCuratorialFactForShape(pot_shape_hint, `${anonymousName}_${Date.now()}`);
-    const pot_quote = sessionPotQuote || pickPotQuote();
-    const pot_color_hex = particleSys.getColorHex();
+    const publicUrl = await uploadPostcardImage(payload.snapshotDataUrl, payload.user_name);
     await saveToGallery({
-      user_name: anonymousName,
+      user_name: payload.user_name,
       user_email: '',
       postcard_image_url: publicUrl,
       clay_model_data: {
-        positions,
-        pot_shape_hint,
-        curatorial_fact,
-        pot_quote,
-        pot_color_hex,
+        positions: payload.positions,
+        pot_shape_hint: payload.pot_shape_hint,
+        curatorial_fact: payload.curatorial_fact,
+        pot_quote: payload.pot_quote,
+        pot_color_hex: payload.pot_color_hex,
       },
     });
-
+    console.info('[gallery save] row inserted');
     notifyGalleryListUpdated();
-
-    saveStatus.textContent = 'Saved';
-    await wait(1400);
-
-    returnToSculpting({ morph: true });
-
-    window.setTimeout(() => {
-      sessionCuratorialFact = null;
-      sessionPotQuote = null;
-      initStudioSessionMeta();
-      applyNextColor();
-    }, POST_SAVE_CYLINDER_TRANSITION_SEC * 1000);
   } catch (err) {
-    const msg = err instanceof Error ? err.message : (err?.text || JSON.stringify(err));
-    saveStatus.textContent = msg;
-    await wait(2200);
-    returnToSculpting({ morph: true });
+    console.error('[gallery save failed]', err);
   }
 }
 
@@ -723,10 +719,8 @@ async function autoSaveCurrentPot() {
  * `morph: false` (Make Another button) does an instant hard reset.
  */
 function returnToSculpting({ morph }) {
-  saveOverlay.classList.add('hidden');
   particleSys.unfreeze();
   isFinishing = false;
-  capturedClayDataUrl = null;
 
   heightTarget = 1.0;
   memorizedRadius = 1.0;

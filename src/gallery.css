@@ -42,7 +42,7 @@ html, body {
 #gallery-title-block {
   display: flex;
   flex-direction: column;
-  gap: 0.1rem;
+  gap: 0.5rem;
   min-width: 0;
 }
 
