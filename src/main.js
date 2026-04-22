@@ -27,7 +27,7 @@ import { pickCuratorialFact, pickCuratorialFactForShape } from './gallery/potter
 import { computePotShapeHint } from './gallery/potShapeProfile.js';
 import { pickPotQuote } from './gallery/potQuotes.js';
 import { uploadPostcardImage, saveToGallery } from './supabase/galleryService.js';
-import { notifyGalleryListUpdated, GALLERY_WINDOW_NAME } from './gallerySyncChannel.js';
+import { notifyGalleryListUpdated } from './gallerySyncChannel.js';
 
 // ── Config ──────────────────────────────────────────────────────
 
@@ -158,11 +158,7 @@ const leapStatus    = document.getElementById('leap-status');
 // Save overlay
 const saveOverlay   = document.getElementById('save-overlay');
 const claySnapshot  = document.getElementById('clay-snapshot');
-const saveForm      = document.getElementById('save-form');
 const saveStatus    = document.getElementById('save-status');
-const saveActions   = document.getElementById('save-actions');
-const btnNewPot     = document.getElementById('btn-new-pot');
-const btnViewGallery = document.getElementById('btn-view-gallery');
 
 
 // Countdown + flash
@@ -204,16 +200,16 @@ let sessionCuratorialFact = null;
 let sessionPotQuote = null;
 let pendingCylinderReset = false;
 
-// Fist-hold photo trigger (requires 1s hold to avoid accidental triggers)
-let fistHoldTime = 0;
-const FIST_HOLD_REQUIRED = 1.0;
 /**
- * After a photo/save flow, require the hand to open back up (non-fist) before we
- * accept another fist-hold trigger; prevents an auto-refire when the user's hand
- * is still curled while returning to sculpting.
+ * Auto-capture: timer counts down while hands are detected; at zero, if the
+ * pot has actually been sculpted beyond the default cylinder, take the photo.
+ * If no pot has formed yet, the timer holds at 0:00 and fires the moment it does.
  */
-let fistArmed = true;
-const FIST_REARM_GRAB_BELOW = 0.3;
+const SESSION_TIMER_SEC = 30;
+/** Minimum clay displacement from the default cylinder to count as "a pot". */
+const SESSION_MIN_DISPLACEMENT = 0.003;
+let sessionTimerRemaining = SESSION_TIMER_SEC;
+const sessionTimerEl = document.getElementById('session-timer');
 
 // Raw LeapJS hands for tracking visualizer
 let rawFrameHands = [];
@@ -435,11 +431,71 @@ function initStudioSessionMeta() {
   sessionPotQuote = pickPotQuote();
 }
 
+/** Render mm:ss with live state classes (idle / warn / urgent / paused). */
+function renderSessionTimer() {
+  if (!sessionTimerEl) return;
+  const secs = Math.max(0, Math.ceil(sessionTimerRemaining));
+  const mm = Math.floor(secs / 60);
+  const ss = String(secs % 60).padStart(2, '0');
+  sessionTimerEl.textContent = `${mm}:${ss}`;
+
+  sessionTimerEl.classList.remove('idle', 'warn', 'urgent', 'paused');
+  if (isFinishing) {
+    sessionTimerEl.classList.add('paused');
+    return;
+  }
+  const hasHands = lastHandData.length > 0;
+  if (!hasHands) {
+    sessionTimerEl.classList.add('idle');
+    return;
+  }
+  if (secs <= 5) sessionTimerEl.classList.add('urgent');
+  else if (secs <= 10) sessionTimerEl.classList.add('warn');
+}
+
+/** Reset the auto-capture countdown to its full duration. */
+function resetSessionTimer() {
+  sessionTimerRemaining = SESSION_TIMER_SEC;
+  renderSessionTimer();
+}
+
+/**
+ * Tick the auto-capture timer. Pauses while isFinishing or when no hands are
+ * detected. At 0, only triggers the photo if the clay has been meaningfully
+ * sculpted (displacement from default cylinder above a small threshold) — else
+ * it holds at 0:00 and fires the moment that condition is met.
+ */
+function tickSessionTimer(dt) {
+  if (isFinishing) {
+    renderSessionTimer();
+    return;
+  }
+  const hasHands = lastHandData.length > 0;
+  if (!hasHands) {
+    renderSessionTimer();
+    return;
+  }
+
+  if (sessionTimerRemaining > 0) {
+    sessionTimerRemaining = Math.max(0, sessionTimerRemaining - dt);
+  }
+
+  if (sessionTimerRemaining <= 0) {
+    const displacement = particleSys.getDisplacementMagnitude();
+    if (displacement >= SESSION_MIN_DISPLACEMENT) {
+      renderSessionTimer();
+      triggerFinish();
+      return;
+    }
+  }
+
+  renderSessionTimer();
+}
+
 function processGestures(dt) {
   const now = performance.now() * 0.001;
 
   if (isFinishing) {
-    fistHoldTime = 0;
     return {
       sculptingEnabled: true,
       allTipsLocal: [],
@@ -470,7 +526,6 @@ function processGestures(dt) {
   let resetSculpt = pendingCylinderReset;
   pendingCylinderReset = false;
 
-  let fistDetected = false;
   let radiusScale = 1.0;
 
   for (const hd of lastHandData) {
@@ -478,12 +533,6 @@ function processGestures(dt) {
 
     const palmLocal = new THREE.Vector3(hd.palm.x, hd.palm.y, hd.palm.z);
     pts.worldToLocal(palmLocal);
-
-    // Fist → photo (grabStrength > 0.8)
-    if (hd.grabStrength > 0.8) {
-      fistDetected = true;
-      continue;
-    }
 
     // Pinch → pressure-sculpt (depth maps vertical ring; pinch strength = rate)
     if (
@@ -507,24 +556,6 @@ function processGestures(dt) {
         clayY,
       });
     }
-  }
-
-  // Fist hold timer → trigger photo after 1s (requires re-open after previous finish)
-  if (!fistArmed) {
-    const allOpen =
-      lastHandData.length === 0 ||
-      lastHandData.every((h) => (h.grabStrength ?? 0) < FIST_REARM_GRAB_BELOW);
-    if (allOpen) fistArmed = true;
-  }
-
-  if (fistDetected && fistArmed) {
-    fistHoldTime += dt;
-    if (fistHoldTime >= FIST_HOLD_REQUIRED) {
-      triggerFinish();
-      fistHoldTime = 0;
-    }
-  } else {
-    fistHoldTime = 0;
   }
 
   // ── Two-hand controls: width + height ──
@@ -597,7 +628,7 @@ function wait(ms) { return new Promise(r => setTimeout(r, ms)); }
 async function triggerFinish() {
   if (isFinishing) return;
   isFinishing = true;
-  fistArmed = false;
+  renderSessionTimer();
 
   particleSys.freeze();
 
@@ -629,33 +660,31 @@ async function triggerFinish() {
   countdownOverlay.classList.add('hidden');
 
   claySnapshot.src = capturedClayDataUrl;
-  saveForm.classList.remove('hidden');
-  saveActions.classList.add('hidden');
   saveStatus.textContent = '';
   saveOverlay.classList.remove('hidden');
+
+  await autoSaveCurrentPot();
 }
 
-async function handleSave(e) {
-  e.preventDefault();
-  const name = document.getElementById('potter-name').value.trim();
-  if (!name) return;
-
-  const btn = document.getElementById('save-btn');
-  btn.disabled = true;
-  saveStatus.textContent = '';
-
+/**
+ * Auto-save the just-captured pot to the gallery anonymously. Shows "Saved" on
+ * success (or an error message on failure) and then returns to sculpting with
+ * the smooth cylinder morph. Replaces the old name-entry form.
+ */
+async function autoSaveCurrentPot() {
+  const anonymousName = 'Anonymous';
   try {
-    const publicUrl = await uploadPostcardImage(capturedClayDataUrl, name);
+    const publicUrl = await uploadPostcardImage(capturedClayDataUrl, anonymousName);
 
     const positions = particleSys.getParticlePositions();
     const pot_shape_hint = computePotShapeHint(positions);
     const curatorial_fact = sessionCuratorialFact
       ? sessionCuratorialFact
-      : pickCuratorialFactForShape(pot_shape_hint, `${name}_${Date.now()}`);
+      : pickCuratorialFactForShape(pot_shape_hint, `${anonymousName}_${Date.now()}`);
     const pot_quote = sessionPotQuote || pickPotQuote();
     const pot_color_hex = particleSys.getColorHex();
     await saveToGallery({
-      user_name: name,
+      user_name: anonymousName,
       user_email: '',
       postcard_image_url: publicUrl,
       clay_model_data: {
@@ -670,7 +699,7 @@ async function handleSave(e) {
     notifyGalleryListUpdated();
 
     saveStatus.textContent = 'Saved';
-    await wait(1100);
+    await wait(1400);
 
     returnToSculpting({ morph: true });
 
@@ -682,8 +711,9 @@ async function handleSave(e) {
     }, POST_SAVE_CYLINDER_TRANSITION_SEC * 1000);
   } catch (err) {
     const msg = err instanceof Error ? err.message : (err?.text || JSON.stringify(err));
-    saveStatus.textContent = 'Failed: ' + msg;
-    btn.disabled = false;
+    saveStatus.textContent = msg;
+    await wait(2200);
+    returnToSculpting({ morph: true });
   }
 }
 
@@ -697,8 +727,6 @@ function returnToSculpting({ morph }) {
   particleSys.unfreeze();
   isFinishing = false;
   capturedClayDataUrl = null;
-  document.getElementById('potter-name').value = '';
-  document.getElementById('save-btn').disabled = false;
 
   heightTarget = 1.0;
   memorizedRadius = 1.0;
@@ -712,8 +740,7 @@ function returnToSculpting({ morph }) {
   lastDisplacementMag = 0;
   lastMaxPinch = 0;
   pinchCooldown = 0;
-  fistHoldTime = 0;
-  fistArmed = false;
+  resetSessionTimer();
 
   if (morph) {
     pendingCylinderReset = false;
@@ -722,14 +749,6 @@ function returnToSculpting({ morph }) {
     particleSys.cancelPostSaveCylinderMorph();
     pendingCylinderReset = true;
   }
-}
-
-function resetForNewPot() {
-  returnToSculpting({ morph: false });
-  sessionCuratorialFact = null;
-  sessionPotQuote = null;
-  initStudioSessionMeta();
-  applyNextColor();
 }
 
 // ── Animation Loop ──────────────────────────────────────────────
@@ -749,6 +768,7 @@ function animate(time = 0) {
   const gesture = processGestures(dt);
   particleSys.update(gesture, dt);
   tickColorTween(dt);
+  tickSessionTimer(dt);
 
   // Audio: contact buzz (triangle osc modulated by palm distance from center)
   const palmDist = lastHandData.length > 0 && lastHandData[0].palm
@@ -806,15 +826,10 @@ function boot() {
     }
   });
 
-  saveForm?.addEventListener('submit', handleSave);
-  btnNewPot?.addEventListener('click', resetForNewPot);
-  btnViewGallery?.addEventListener('click', () => {
-    window.open(`/gallery.html`, GALLERY_WINDOW_NAME, 'noopener,noreferrer');
-  });
-
   initTrackingView(camera);
   initStudioSessionMeta();
   initColorImmediate();
+  resetSessionTimer();
   animate();
   initLeap();
 }

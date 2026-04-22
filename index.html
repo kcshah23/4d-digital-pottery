@@ -23,6 +23,9 @@
         <p id="leap-status">Connecting to Leap Motion…</p>
       </div>
 
+      <!-- Auto-capture countdown (top center) -->
+      <div id="session-timer" aria-live="off">0:30</div>
+
       <!-- Full-screen hand tracking overlay -->
       <canvas id="tracking-canvas"></canvas>
 
@@ -34,26 +37,13 @@
       <!-- Camera Flash -->
       <div id="flash-overlay" class="hidden"></div>
 
-      <!-- Save Overlay (shown after countdown + flash) -->
+      <!-- Save Overlay (auto-save after countdown + flash) -->
       <div id="save-overlay" class="hidden">
         <div id="save-card">
           <div id="save-preview">
             <img id="clay-snapshot" alt="Your Clay" />
           </div>
-          <form id="save-form">
-            <input
-              type="text"
-              id="potter-name"
-              aria-label="Your name"
-              required
-            />
-            <button type="submit" id="save-btn">Save to Gallery</button>
-            <p id="save-status" aria-live="polite"></p>
-          </form>
-          <div id="save-actions" class="hidden">
-            <button id="btn-new-pot">Make Another</button>
-            <button id="btn-view-gallery">View Gallery</button>
-          </div>
+          <p id="save-status" aria-live="polite"></p>
         </div>
       </div>
 
