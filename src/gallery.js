@@ -2,12 +2,14 @@
  * Gallery page — fetches all pots from Supabase and renders a grid.
  * Ceramic fact sits above the pot image; the quote (if any) overlays it.
  *
- * Auto-refresh strategy (live second-display updates on every save):
+ * Auto-refresh strategy — whenever any signal below arrives we do a full
+ * window.location.reload() so the second display can't possibly show stale
+ * DOM after a new pot is saved. One-shot guard prevents double-reloads when
+ * two signals race.
  *   1. BroadcastChannel — same-browser tabs, instant.
  *   2. Supabase Realtime — cross-device INSERT notifications.
- *   3. Polling fallback — every 15s, compare max(created_at); cheap belt-and-braces.
- *   4. visibilitychange — refresh the moment the gallery tab is focused again.
- * All paths funnel through `refreshGallery()` which debounces + dedupes.
+ *   3. Polling — every 4s, compare max(created_at); belt-and-braces.
+ *   4. visibilitychange — poll immediately when the tab is focused again.
  */
 
 import { fetchGallery } from './supabase/galleryService.js';
@@ -19,10 +21,8 @@ const grid    = document.getElementById('gallery-grid');
 const empty   = document.getElementById('gallery-empty');
 const loading = document.getElementById('gallery-loading');
 
-/** Timestamp of the newest row we've rendered; used to de-dupe polling + realtime signals. */
+/** Timestamp of the newest row we've rendered; used by the polling fallback. */
 let latestCreatedAt = '';
-/** Debounce handle so rapid-fire signals collapse into a single refetch. */
-let refreshTimer = null;
 
 /** Fact directly above the pottery image box (source intentionally omitted). */
 function appendFactAboveBlock(card, cf) {
@@ -92,7 +92,11 @@ async function loadGallery(opts = {}) {
 
     latestCreatedAt = entries[0]?.created_at || latestCreatedAt;
 
-    for (const entry of entries) {
+    // Oldest pot is #01, newest gets the largest number. entries arrive newest-first.
+    const total = entries.length;
+    entries.forEach((entry, i) => {
+      const displayNumber = String(total - i).padStart(2, '0');
+
       const card = document.createElement('div');
       card.className = 'gallery-card';
       const clay = entry.clay_model_data;
@@ -105,7 +109,7 @@ async function loadGallery(opts = {}) {
 
       const img = document.createElement('img');
       img.src = entry.postcard_image_url;
-      img.alt = `Pot by ${entry.user_name}`;
+      img.alt = `Pot ${displayNumber}`;
       img.loading = 'lazy';
       visual.appendChild(img);
 
@@ -117,7 +121,7 @@ async function loadGallery(opts = {}) {
 
       const name = document.createElement('span');
       name.className = 'gallery-name';
-      name.textContent = entry.user_name;
+      name.textContent = displayNumber;
       info.appendChild(name);
 
       const stamp = formatSavedAt(entry.created_at);
@@ -132,7 +136,7 @@ async function loadGallery(opts = {}) {
       card.appendChild(info);
 
       grid.appendChild(card);
-    }
+    });
   } catch (err) {
     loading.classList.add('hidden');
     if (quiet) {
@@ -153,13 +157,19 @@ async function loadGallery(opts = {}) {
   }
 }
 
-/** Debounced quiet refetch. Multiple signals within 400ms collapse into one. */
-function refreshGallery() {
-  if (refreshTimer) return;
-  refreshTimer = setTimeout(() => {
-    refreshTimer = null;
-    loadGallery({ quiet: true });
-  }, 400);
+/**
+ * Force a full page reload. Guarded so multiple signals (broadcast + realtime +
+ * poll all arriving within a few ms of each other) don't fire reload() twice.
+ */
+let reloadArmed = false;
+function hardReload(reason) {
+  if (reloadArmed) return;
+  reloadArmed = true;
+  console.info('[gallery] hard reload →', reason);
+  // Small delay so the "broadcast received" log + any in-flight fetch resolve
+  // before the page tears down. Also gives Supabase's Postgres replication a
+  // breath in case we beat the row's visibility on the read replica.
+  setTimeout(() => window.location.reload(), 300);
 }
 
 // ── 1. BroadcastChannel (same-browser tabs) ──────────────────────────────
@@ -167,8 +177,7 @@ try {
   const sync = new BroadcastChannel(GALLERY_SYNC_CHANNEL);
   sync.onmessage = (ev) => {
     if (ev?.data?.type === 'refresh') {
-      console.info('[gallery] broadcast received → refresh');
-      refreshGallery();
+      hardReload('broadcast');
     }
   };
   console.info('[gallery] broadcast listener ready');
@@ -183,10 +192,7 @@ try {
     .on(
       'postgres_changes',
       { event: 'INSERT', schema: 'public', table: 'user_postcard_gallery' },
-      () => {
-        console.info('[gallery] realtime INSERT → refresh');
-        refreshGallery();
-      },
+      () => hardReload('realtime-insert'),
     )
     .subscribe((status) => {
       console.info('[gallery] realtime status:', status);
@@ -201,8 +207,7 @@ async function pollForNewPots() {
     const latest = await fetchGallery(1);
     const top = latest && latest[0];
     if (top && top.created_at && top.created_at !== latestCreatedAt) {
-      console.info('[gallery] poll detected new pot → refresh', top.created_at);
-      refreshGallery();
+      hardReload('poll');
     }
   } catch (_) {
     /* transient network error; try again next tick */
