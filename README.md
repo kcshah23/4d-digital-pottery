@@ -1,40 +1,51 @@
 # 4D Digital Pottery
 
-A hand-tracked, immersive pottery sculpting experience using Three.js, Leap Motion (LeapJS), Web Audio, Supabase (gallery + storage), and bloom post-processing.
+A hand-tracked, immersive pottery sculpting experience.
+Sculpt a 50,000-particle pot in mid-air with a Leap Motion controller, then save your finished pot to a persistent web gallery.
 
-## Prerequisites
+Built with **Three.js**, **Ultraleap Leap Motion**, **Web Audio**, and **Supabase**.
 
-- **Leap Motion / Ultraleap** controller
-- **WebSocket on port 6437** (see below)
-- A `squish.mp3` audio file (place in `/public/`)
-- **Supabase** project with `user_postcard_gallery` table and public `postcard-images` storage bucket (see `CLAUDE.md`)
+---
 
-### WebSocket for Ultraleap (Required if you see "Waiting for connection")
+## Hardware Required
 
-With **Ultraleap Gemini V5+** (Ultraleap Control Panel), the built-in WebSocket was removed. Run the bridge included in this repo:
+- **Ultraleap Leap Motion Controller** (Gemini V5+ supported)
+- A laptop / desktop with a modern browser (Chrome / Firefox / Safari)
+- Speakers or headphones (for audio feedback)
 
-```bash
-npm run setup-leap-bridge   # one-time
-npm run dev                 # starts bridge + Vite
-```
+---
 
-Or see `CLAUDE.md` for details. With the bridge running, the app connects on `ws://127.0.0.1:6437`.
+## Software Prerequisites
+
+- **Node.js** 18+ and **npm**
+- **Ultraleap Tracking Software** installed (the Control Panel app)
+- For the Leap WebSocket bridge: **git**, **cmake**, **libwebsockets**
+  - macOS: `brew install cmake libwebsockets`
+- A **Supabase** project (free tier is fine) with:
+  - A public storage bucket called `postcard-images`
+  - A table called `user_postcard_gallery` (image URL + particle positions JSONB)
+  - See `CLAUDE.md` for the schema details
+
+---
 
 ## Setup
 
 ```bash
+# 1. Install npm dependencies
 npm install
-```
 
-Add your `squish.mp3` to the `public/` folder. Configure Supabase URL and anon key in `src/supabase/supabaseClient.js`.
-
-**One-time: build the Leap WebSocket bridge** (required for Ultraleap hand tracking):
-
-```bash
+# 2. One-time: build the Ultraleap WebSocket bridge
+#    (Gemini V5+ removed the built-in WebSocket, so we run our own)
 npm run setup-leap-bridge
+
+# 3. Add your audio file
+#    Place a squish.mp3 file inside the public/ folder
+
+# 4. Configure Supabase
+#    Open src/supabase/supabaseClient.js and set your Supabase URL + anon key
 ```
 
-You need: `git`, `cmake`, and `libwebsockets` (on macOS: `brew install cmake libwebsockets`).
+---
 
 ## Run
 
@@ -42,52 +53,137 @@ You need: `git`, `cmake`, and `libwebsockets` (on macOS: `brew install cmake lib
 npm run dev
 ```
 
-This starts both the Leap WebSocket bridge (if built) and the app. Use `npm run dev:vite` to run only Vite (no Leap).
+This starts:
+- The **Leap WebSocket bridge** on `ws://127.0.0.1:6437`
+- The **Vite dev server** on http://localhost:5173
 
-## Features
+Then open **http://localhost:5173** in your browser.
 
-- 50,000-particle point cloud with spring-mass physics and surface-of-revolution pot shape
-- Leap hand gestures: sculpt, smooth, width/height, reset, finish (fist hold or **F**)
-- Full-screen hand skeleton overlay aligned with the 3D scene (camera projection)
-- Neon color palette (25 hues) that cycles each new pot session
-- Save flow: countdown → clay snapshot → name → upload to Supabase Storage + row in `user_postcard_gallery`
-- Standalone gallery at **`/gallery.html`** (all saved pots)
+> Want to run only the visuals (no Leap hardware needed)? Use `npm run dev:vite`.
 
-## Controls
+To build for production:
 
-- Move hands over the clay to sculpt
-- **Fist hold ~1s** or **press F** to finish (countdown → save)
-- Enter your name and **Save to Gallery**; you are redirected to the gallery when done
-- **Gallery** link (bottom-right) or visit `/gallery.html` anytime
+```bash
+npm run build      # outputs to dist/
+npm run preview    # serves the production build
+```
+
+---
+
+## How to Use
+
+1. Hold both hands over the Leap Motion sensor.
+2. The grid of particles transitions into a glowing pot shape.
+3. **Sculpt** with your fingers:
+   - **Pinch** (thumb + index): pull the wall outward at that height
+   - **Two open palms**: stretch / squeeze the pot's width
+   - **Flat palm**: smooth the surface
+4. When you're happy, **make a fist and hold for ~1 second** (or press **F**) to start the 3-2-1 countdown and save your pot.
+5. Type your name → **Save to Gallery** → you'll be redirected to the gallery view.
+6. Visit the gallery any time at **http://localhost:5173/gallery.html**.
+
+---
+
+## System Architecture
+
+```
+[Ultraleap Leap Motion] --USB--> [leap-bridge (C WebSocket server)] --ws://6437--> [Browser]
+                                                                                        |
+                                                                                        v
+                                                                  [main.js: gestures, animation]
+                                                                                        |
+                              ----------------------------------------------------------+
+                              |              |              |               |           |
+                              v              v              v               v           v
+                    [particleSystem]  [leapCoordinates]  [handVisualizer] [audioManager] [postcardManager]
+                                                                                                |
+                                                                                                v
+                                                                                  [galleryService] --> [Supabase Storage + Postgres]
+                                                                                                                          |
+                                                                                                                          v
+                                                                                                            [gallery.html / gallery.js]
+```
+
+A higher-resolution diagram is included as `assets/system-diagram-bw.png`.
+
+---
 
 ## Project Structure
 
 ```
-├── index.html
-├── gallery.html
+.
+├── index.html                        # Main sculpting app
+├── gallery.html                      # Saved-pots gallery page
 ├── package.json
 ├── vite.config.js
-├── CLAUDE.md              # Detailed architecture for contributors / AI tools
+├── CLAUDE.md                         # Detailed architecture notes
+├── README.md
+│
 ├── src/
-│   ├── main.js            # Entry, Three.js, Leap, gestures, save flow
-│   ├── gallery.js         # Gallery page: fetch & grid
+│   ├── main.js                       # Entry point: Three.js scene, Leap, gestures, save flow
+│   ├── gallery.js                    # Gallery page: fetch + grid layout
 │   ├── gallery.css
 │   ├── styles.css
+│   │
 │   ├── particles/
-│   │   └── particleSystem.js
-│   ├── postcard/
-│   │   └── postcardManager.js   # Canvas capture, html2canvas helpers
-│   ├── supabase/
-│   │   ├── supabaseClient.js
-│   │   └── galleryService.js    # Storage upload + table CRUD
+│   │   └── particleSystem.js         # 50,000 particles, spring-mass physics, ring topology
+│   │
 │   ├── tracking/
-│   │   └── handVisualizer.js      # Full-screen hand overlay
+│   │   └── handVisualizer.js         # Full-screen hand skeleton overlay
+│   │
 │   ├── audio/
-│   │   └── audioManager.js
+│   │   └── audioManager.js           # Web Audio: swoosh + squish
+│   │
+│   ├── postcard/
+│   │   └── postcardManager.js        # Canvas capture (html2canvas)
+│   │
+│   ├── supabase/
+│   │   ├── supabaseClient.js         # Supabase config (URL + anon key)
+│   │   └── galleryService.js         # Upload + CRUD for saved pots
+│   │
 │   └── utils/
-│       ├── leapCoordinates.js
-│       └── deformation.js         # Legacy mesh deformation (unused)
+│       ├── leapCoordinates.js        # Leap mm → Three.js world space
+│       └── deformation.js            # Legacy mesh deformer (unused)
+│
 ├── public/
-│   └── squish.mp3
-└── leap-bridge/           # Ultraleap WebSocket (after setup-leap-bridge)
+│   ├── leap.min.js                   # LeapJS client library
+│   └── squish.mp3                    # Audio (add this yourself)
+│
+├── scripts/
+│   ├── setup-leap-bridge.js          # Builds the Ultraleap WebSocket bridge
+│   └── run-leap-bridge.js            # Runs the bridge alongside Vite
+│
+├── leap-bridge/                      # Ultraleap WebSocket source (after setup)
+└── mcp-leap/                         # Optional MCP server exposing Leap data
 ```
+
+---
+
+## Tech Stack
+
+| Layer        | Tech                                                 |
+|--------------|------------------------------------------------------|
+| Hardware     | Ultraleap Leap Motion Controller (Gemini V5+)        |
+| Bridge       | UltraleapTrackingWebSocket (C, libwebsockets)        |
+| Rendering    | Three.js + EffectComposer (UnrealBloomPass)          |
+| Physics      | Custom spring-mass simulation on `Float32Array`      |
+| Hand input   | LeapJS (loaded via `<script>` tag)                   |
+| Audio        | Web Audio API (no library)                           |
+| Capture      | html2canvas + `preserveDrawingBuffer`                |
+| Backend      | Supabase (Postgres + Storage)                        |
+| Build / dev  | Vite + concurrently                                  |
+
+---
+
+## Troubleshooting
+
+- **"Waiting for connection…"** — the Leap WebSocket bridge isn't running. Run `npm run setup-leap-bridge` once, then `npm run dev`.
+- **Hands not detected** — check that the Ultraleap Control Panel sees your hands; the room may be too dark or too sun-lit.
+- **Save button doesn't work** — confirm your Supabase URL/anon key in `src/supabase/supabaseClient.js`, and that the storage bucket and table exist.
+- **No audio** — make sure `public/squish.mp3` exists, and click anywhere on the page once (browsers block audio until user interaction).
+
+---
+
+## Author
+
+**Kamya Shah** — UDIST-3120 Computational & Studio Practice, California College of the Arts, Spring 2026.
